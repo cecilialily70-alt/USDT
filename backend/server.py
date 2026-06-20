@@ -37,6 +37,11 @@ class StatusCheck(BaseModel):
 class StatusCheckCreate(BaseModel):
     client_name: str
 
+class ExchangeConfig(BaseModel):
+    buyRate: float = 4.4
+    sellRate: float = 3.3
+    whatsappLink: str = "https://wa.me/972552452669"
+
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
@@ -65,6 +70,26 @@ async def get_status_checks():
             check['timestamp'] = datetime.fromisoformat(check['timestamp'])
     
     return status_checks
+
+# Config endpoints
+@api_router.get("/config", response_model=ExchangeConfig)
+async def get_config():
+    config = await db.exchange_config.find_one({}, {"_id": 0})
+    if config:
+        return ExchangeConfig(**config)
+    # Return default config if none exists
+    return ExchangeConfig()
+
+@api_router.post("/config", response_model=ExchangeConfig)
+async def update_config(config: ExchangeConfig):
+    config_dict = config.model_dump()
+    # Update or insert the config (upsert)
+    await db.exchange_config.update_one(
+        {},  # Match any document
+        {"$set": config_dict},
+        upsert=True
+    )
+    return config
 
 # Include the router in the main app
 app.include_router(api_router)

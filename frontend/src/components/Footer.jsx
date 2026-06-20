@@ -1,11 +1,29 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { MessageCircle } from 'lucide-react';
 import { Button } from './ui/button';
+import axios from 'axios';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
 
 const Footer = () => {
   const { t } = useLanguage();
   const currentYear = new Date().getFullYear();
+  const [whatsappLink, setWhatsappLink] = useState('https://wa.me/972552452669');
+
+  useEffect(() => {
+    fetchWhatsappLink();
+  }, []);
+
+  const fetchWhatsappLink = async () => {
+    try {
+      const response = await axios.get(`${API}/config`);
+      setWhatsappLink(response.data.whatsappLink);
+    } catch (error) {
+      console.log('Using default WhatsApp link');
+    }
+  };
 
   return (
     <footer className="relative bg-gradient-to-b from-[#0B0F19] to-[#050810] border-t border-white/10">
@@ -69,14 +87,14 @@ const Footer = () => {
 
       {/* WhatsApp Floating Button */}
       <a
-        href="https://wa.me/972559712492"
+        href={whatsappLink}
         target="_blank"
         rel="noopener noreferrer"
         className="fixed bottom-8 end-8 z-50"
       >
         <Button
           size="lg"
-          className="w-16 h-16 rounded-full bg-[#25D366] hover:bg-[#20BA5A] shadow-2xl hover:shadow-[#25D366]/50 transition-all duration-300 hover:scale-110 p-0"
+          className="w-16 h-16 rounded-full bg-[#25D366] hover:bg-[#20BA5A] shadow-2xl hover:shadow-[#25D366]/50 transition-all duration-300 hover:scale-110 p-0 animate-glow"
         >
           <MessageCircle className="w-8 h-8 text-white" />
         </Button>

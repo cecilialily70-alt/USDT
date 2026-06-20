@@ -11,50 +11,50 @@ export const translations = {
       howItWorks: 'How It Works',
       security: 'Security',
       reviews: 'Reviews',
-      connectWallet: 'Connect Wallet'
+      admin: 'Admin',
     },
     hero: {
-      badge: 'BingX Verified Trader',
-      title: 'Secure USDT ⇄ ILS Exchange',
-      subtitle: "Israel's Most Trusted Cryptocurrency Platform",
-      description: 'Fast, secure, and verified by BingX Exchange. Trade USDT with Israeli Shekels in minutes.',
+      badge: 'BingX Verified Exchange',
+      title: 'Premium USDT ⇄ ILS Exchange',
+      subtitle: "Israel's Most Trusted Crypto Exchange Platform",
+      description: 'Fast, secure, and verified cryptocurrency exchange. Trade USDT with Israeli Shekels at competitive rates with instant settlement.',
       buyUSDT: 'Buy USDT',
       sellUSDT: 'Sell USDT',
       buyRate: '1 USDT = 4.4 ILS',
-      sellRate: '1 USDT = 3.5 ILS',
+      sellRate: '1 USDT = 3.3 ILS',
       startTrading: 'Start Trading',
       learnMore: 'Learn More'
     },
     features: {
-      title: 'Why Choose Us?',
-      subtitle: 'The most secure and efficient USDT exchange platform',
+      title: 'Why Choose Our Exchange?',
+      subtitle: 'Professional cryptocurrency trading platform with institutional-grade security',
       feature1Title: 'Lightning Fast',
-      feature1Desc: 'Complete transactions in under 5 minutes. Our streamlined process ensures quick delivery.',
+      feature1Desc: 'Instant transactions with real-time settlement. Our streamlined process ensures your trades execute in seconds.',
       feature2Title: 'Bank-Level Security',
-      feature2Desc: 'BingX verified trader with full compliance. Your funds are always protected.',
-      feature3Title: '24/7 Support',
-      feature3Desc: "Direct WhatsApp support for all your questions. We're here when you need us.",
-      feature4Title: 'Verified Platform',
-      feature4Desc: 'Officially verified by BingX Exchange. Large transactions require KYC verification.'
+      feature2Desc: 'BingX verified exchange with full regulatory compliance. Your funds are protected by industry-leading security measures.',
+      feature3Title: '24/7 Professional Support',
+      feature3Desc: 'Direct WhatsApp support from our professional traders. Get instant assistance anytime you need it.',
+      feature4Title: 'Verified & Licensed',
+      feature4Desc: 'Officially verified by BingX Exchange. Operating with full transparency and regulatory compliance.'
     },
     howItWorks: {
       title: 'How It Works',
-      subtitle: 'Simple 3-step process to exchange USDT',
+      subtitle: 'Simple 3-step process for seamless USDT exchange',
       step1Title: 'Choose Amount',
-      step1Desc: 'Enter the amount of USDT you want to buy or sell',
-      step2Title: 'Verify Identity',
-      step2Desc: 'Complete quick KYC verification for secure transactions',
-      step3Title: 'Complete Trade',
-      step3Desc: 'Receive your funds instantly via bank transfer'
+      step1Desc: 'Select whether you want to buy or sell USDT and enter your desired amount',
+      step2Title: 'Contact Trader',
+      step2Desc: 'Connect directly with our verified trader via WhatsApp for instant processing',
+      step3Title: 'Complete Exchange',
+      step3Desc: 'Receive your funds instantly via bank transfer with full transaction confirmation'
     },
     stats: {
-      users: 'Happy Users',
-      transactions: 'Transactions',
-      volume: 'Trading Volume'
+      users: 'Active Traders',
+      transactions: 'Daily Transactions',
+      volume: 'Monthly Volume'
     },
     calculator: {
-      title: 'USDT Calculator',
-      subtitle: 'Calculate exchange rates instantly',
+      title: 'Exchange Calculator',
+      subtitle: 'Calculate exchange rates and fees instantly',
       amount: 'Amount',
       youPay: 'You Pay',
       youReceive: 'You Receive',
@@ -65,22 +65,22 @@ export const translations = {
       sell: 'Sell'
     },
     security: {
-      title: 'Bank-Level Security',
-      subtitle: 'Your funds are always protected',
+      title: 'Institutional-Grade Security',
+      subtitle: 'Your assets are protected by cutting-edge security infrastructure',
       compliance: 'Full regulatory compliance',
-      encryption: 'End-to-end encryption',
-      verification: 'Identity verification',
-      insurance: 'Fund insurance protection'
+      encryption: 'Military-grade encryption',
+      verification: 'Multi-layer verification',
+      insurance: 'Asset insurance coverage'
     },
     reviews: {
-      title: 'Customer Reviews',
-      subtitle: 'Join 10,000+ satisfied customers',
-      review1: '"Incredibly fast service! Received my USDT within 3 minutes. Highly recommended!"',
-      review2: '"Best exchange rate in Israel. The customer service is exceptional."',
-      review3: '"Very professional and trustworthy. Been using them for 6 months now."',
-      review4: '"Smooth process, great rates. Will definitely use again!"',
-      review5: '"Finally a reliable crypto exchange in Israel. Great experience!"',
-      review6: '"Fast transactions, excellent support. The best in the market!"',
+      title: 'Trusted by Thousands',
+      subtitle: 'Join 10,000+ satisfied traders worldwide',
+      review1: '"Incredibly fast and reliable! Best USDT exchange rates in Israel. Highly professional service."',
+      review2: '"Best exchange platform I\'ve used. Transparent rates, instant transactions, and excellent support."',
+      review3: '"Very professional traders. Been using their service for 8 months now. Never had any issues."',
+      review4: '"Smooth process, competitive rates. The WhatsApp support is incredibly responsive!"',
+      review5: '"Finally a trustworthy crypto exchange in Israel. Couldn\'t be happier with the service."',
+      review6: '"Fast transactions, transparent pricing, professional support. Highly recommended!"',
       name1: 'David M.',
       name2: 'Sarah L.',
       name3: 'Michael R.',
@@ -89,14 +89,26 @@ export const translations = {
       name6: 'Daniel S.'
     },
     footer: {
-      description: "Israel's most trusted USDT to ILS exchange platform.",
+      description: "Israel's premium USDT to ILS exchange platform with competitive rates.",
       rights: 'All rights reserved.',
       terms: 'Terms of Service',
       privacy: 'Privacy Policy',
       contact: 'Contact Us'
     },
     notice: {
-      kyc: 'Large transactions require identity verification for security compliance.'
+      kyc: 'Large transactions may require identity verification for compliance and security.'
+    },
+    tradeModal: {
+      buyTitle: 'Buy USDT',
+      sellTitle: 'Sell USDT',
+      subtitle: 'Enter the amount you want to trade',
+      usdtAmount: 'USDT Amount',
+      ilsAmount: 'ILS Amount (₪)',
+      exchangeRate: 'Exchange Rate',
+      contactTrader: 'Contact Trader',
+      cancel: 'Cancel',
+      errorTitle: 'Invalid Amount',
+      errorAmount: 'Please enter a valid amount greater than 0'
     }
   },
   he: {
@@ -110,50 +122,50 @@ export const translations = {
       howItWorks: 'איך זה עובד',
       security: 'אבטחה',
       reviews: 'ביקורות',
-      connectWallet: 'חבר ארנק'
+      admin: 'ניהול',
     },
     hero: {
-      badge: 'סוחר מאומת BingX',
-      title: 'המרת USDT ⇄ ILS מאובטחת',
-      subtitle: 'פלטפורמת הקריפטו המהימנה בישראל',
-      description: 'מהיר, מאובטח ומאומת על ידי BingX Exchange. סחר USDT עם שקלים ישראלים תוך דקות.',
+      badge: 'בורסה מאומתת BingX',
+      title: 'המרת USDT ⇄ ILS פרימיום',
+      subtitle: 'פלטפורמת הקריפטו המהימנה ביותר בישראל',
+      description: 'המרת מטבעות קריפטו מהירה, מאובטחת ומאומתת. סחר USDT עם שקלים ישראלים בשערים תחרותיים עם סליקה מיידית.',
       buyUSDT: 'קנה USDT',
       sellUSDT: 'מכור USDT',
       buyRate: '1 USDT = 4.4 ₪',
-      sellRate: '1 USDT = 3.5 ₪',
+      sellRate: '1 USDT = 3.3 ₪',
       startTrading: 'התחל לסחור',
       learnMore: 'למד עוד'
     },
     features: {
-      title: 'למה לבחור בנו?',
-      subtitle: 'פלטפורמת החלפת USDT המאובטחת והיעילה ביותר',
+      title: 'למה לבחור בבורסה שלנו?',
+      subtitle: 'פלטפורמת מסחר קריפטו מקצועית עם אבטחה ברמה מוסדית',
       feature1Title: 'מהיר במיוחד',
-      feature1Desc: 'השלם עסקאות תוך פחות מ-5 דקות. התהליך המייעל שלנו מבטיח משלוח מהיר.',
+      feature1Desc: 'עסקאות מיידיות עם סליקה בזמן אמת. התהליך המיועל שלנו מבטיח ביצוע עסקאות בשניות.',
       feature2Title: 'אבטחה ברמת בנק',
-      feature2Desc: 'סוחר מאומת BingX עם תאימות מלאה. הכספים שלך תמיד מוגנים.',
-      feature3Title: 'תמיכה 24/7',
-      feature3Desc: 'תמיכת WhatsApp ישירה לכל השאלות שלך. אנחנו כאן כשאתה צריך אותנו.',
-      feature4Title: 'פלטפורמה מאומתת',
-      feature4Desc: 'מאומת רשמית על ידי BingX Exchange. עסקאות גדולות דורשות אימות KYC.'
+      feature2Desc: 'בורסה מאומתת BingX עם תאימות רגולטורית מלאה. הכספים שלך מוגנים באמצעות אמצעי אבטחה מובילים בתעשייה.',
+      feature3Title: 'תמיכה מקצועית 24/7',
+      feature3Desc: 'תמיכת WhatsApp ישירה מהסוחרים המקצועיים שלנו. קבל סיוע מיידי בכל עת שתצטרך.',
+      feature4Title: 'מאומת ומורשה',
+      feature4Desc: 'מאומת רשמית על ידי BingX Exchange. פועלים בשקיפות מלאה ותאימות רגולטורית.'
     },
     howItWorks: {
       title: 'איך זה עובד',
-      subtitle: 'תהליך פשוט בן 3 שלבים להחלפת USDT',
+      subtitle: 'תהליך פשוט בן 3 שלבים להמרת USDT חלקה',
       step1Title: 'בחר סכום',
-      step1Desc: 'הזן את כמות ה-USDT שברצונך לקנות או למכור',
-      step2Title: 'אמת זהות',
-      step2Desc: 'השלם אימות KYC מהיר לעסקאות מאובטחות',
-      step3Title: 'השלם עסקה',
-      step3Desc: 'קבל את הכספים שלך באופן מיידי באמצעות העברה בנקאית'
+      step1Desc: 'בחר אם ברצונך לקנות או למכור USDT והזן את הסכום הרצוי',
+      step2Title: 'צור קשר עם סוחר',
+      step2Desc: 'התחבר ישירות לסוחר המאומת שלנו דרך WhatsApp לעיבוד מיידי',
+      step3Title: 'השלם החלפה',
+      step3Desc: 'קבל את הכספים שלך מיד באמצעות העברה בנקאית עם אישור עסקה מלא'
     },
     stats: {
-      users: 'משתמשים מרוצים',
-      transactions: 'עסקאות',
-      volume: 'נפח מסחר'
+      users: 'סוחרים פעילים',
+      transactions: 'עסקאות יומיות',
+      volume: 'נפח חודשי'
     },
     calculator: {
-      title: 'מחשבון USDT',
-      subtitle: 'חשב שערי חליפין באופן מיידי',
+      title: 'מחשבון המרה',
+      subtitle: 'חשב שערי חליפין ועמלות באופן מיידי',
       amount: 'סכום',
       youPay: 'אתה משלם',
       youReceive: 'אתה מקבל',
@@ -164,22 +176,22 @@ export const translations = {
       sell: 'מכור'
     },
     security: {
-      title: 'אבטחה ברמת בנק',
-      subtitle: 'הכספים שלך תמיד מוגנים',
+      title: 'אבטחה ברמה מוסדית',
+      subtitle: 'הנכסים שלך מוגנים על ידי תשתית אבטחה מתקדמת',
       compliance: 'תאימות רגולטורית מלאה',
-      encryption: 'הצפנה מקצה לקצה',
-      verification: 'אימות זהות',
-      insurance: 'הגנת ביטוח כספים'
+      encryption: 'הצפנה ברמה צבאית',
+      verification: 'אימות רב-שכבתי',
+      insurance: 'כיסוי ביטוח נכסים'
     },
     reviews: {
-      title: 'ביקורות לקוחות',
-      subtitle: 'הצטרף ל-10,000+ לקוחות מרוצים',
-      review1: '"שירות מהיר להפליא! קיבלתי את ה-USDT שלי תוך 3 דקות. מומלץ בחום!"',
-      review2: '"שער החליפין הטוב ביותר בישראל. שירות הלקוחות יוצא מן הכלל."',
-      review3: '"מאוד מקצועי ואמין. משתמש בהם כבר 6 חודשים."',
-      review4: '"תהליך חלק, מחירים מעולים. בהחלט אשתמש שוב!"',
-      review5: '"סוף סוף בורסת קריפטו אמינה בישראל. חוויה נהדרת!"',
-      review6: '"עסקאות מהירות, תמיכה מצוינת. הטוב ביותר בשוק!"',
+      title: 'מהימן על ידי אלפים',
+      subtitle: 'הצטרף ל-10,000+ סוחרים מרוצים ברחבי העולם',
+      review1: '"מהיר ואמין להפליא! שערי החלפת USDT הטובים ביותר בישראל. שירות מקצועי ביותר."',
+      review2: '"הפלטפורמה הטובה ביותר שהשתמשתי בה. שערים שקופים, עסקאות מיידיות ותמיכה מצוינת."',
+      review3: '"סוחרים מאוד מקצועיים. משתמש בשירות שלהם כבר 8 חודשים. אף פעם לא היו בעיות."',
+      review4: '"תהליך חלק, שערים תחרותיים. תמיכת WhatsApp מגיבה בצורה מדהימה!"',
+      review5: '"סוף סוף בורסת קריפטו אמינה בישראל. לא יכול להיות מרוצה יותר מהשירות."',
+      review6: '"עסקאות מהירות, תמחור שקוף, תמיכה מקצועית. מומלץ בחום!"',
       name1: 'דוד מ.',
       name2: 'שרה ל.',
       name3: 'מיכאל ר.',
@@ -188,14 +200,26 @@ export const translations = {
       name6: 'דניאל ס.'
     },
     footer: {
-      description: 'פלטפורמת החלפת USDT ל-ILS המהימנה בישראל.',
+      description: 'פלטפורמת המרת USDT ל-ILS פרימיום בישראל עם שערים תחרותיים.',
       rights: 'כל הזכויות שמורות.',
       terms: 'תנאי שירות',
       privacy: 'מדיניות פרטיות',
       contact: 'צור קשר'
     },
     notice: {
-      kyc: 'עסקאות גדולות דורשות אימות זהות לתאימות אבטחה.'
+      kyc: 'עסקאות גדולות עשויות לדרוש אימות זהות לתאימות ואבטחה.'
+    },
+    tradeModal: {
+      buyTitle: 'קנה USDT',
+      sellTitle: 'מכור USDT',
+      subtitle: 'הזן את הסכום שברצונך לסחור',
+      usdtAmount: 'סכום USDT',
+      ilsAmount: 'סכום שקלים (₪)',
+      exchangeRate: 'שער החליפין',
+      contactTrader: 'צור קשר עם סוחר',
+      cancel: 'ביטול',
+      errorTitle: 'סכום לא חוקי',
+      errorAmount: 'אנא הזן סכום חוקי גדול מ-0'
     }
   },
   ar: {
@@ -205,54 +229,54 @@ export const translations = {
     name: 'العربية',
     navbar: {
       home: 'الرئيسية',
-      features: 'الميزات',
+      features: 'المميزات',
       howItWorks: 'كيف يعمل',
       security: 'الأمان',
       reviews: 'التقييمات',
-      connectWallet: 'ربط المحفظة'
+      admin: 'الإدارة',
     },
     hero: {
-      badge: 'متداول معتمد من BingX',
-      title: 'تبادل USDT ⇄ ILS آمن',
-      subtitle: 'منصة العملات المشفرة الأكثر موثوقية في إسرائيل',
-      description: 'سريع وآمن ومعتمد من قبل BingX Exchange. تداول USDT بالشيكل الإسرائيلي في دقائق.',
+      badge: 'بورصة معتمدة من BingX',
+      title: 'تبادل USDT ⇄ ILS المتميز',
+      subtitle: 'منصة تبادل العملات المشفرة الأكثر موثوقية في إسرائيل',
+      description: 'تبادل عملات مشفرة سريع وآمن ومعتمد. تداول USDT بالشيكل الإسرائيلي بأسعار تنافسية مع تسوية فورية.',
       buyUSDT: 'شراء USDT',
       sellUSDT: 'بيع USDT',
       buyRate: '1 USDT = 4.4 ILS',
-      sellRate: '1 USDT = 3.5 ILS',
+      sellRate: '1 USDT = 3.3 ILS',
       startTrading: 'ابدأ التداول',
       learnMore: 'اعرف المزيد'
     },
     features: {
-      title: 'لماذا تختارنا؟',
-      subtitle: 'منصة تبادل USDT الأكثر أمانًا وكفاءة',
+      title: 'لماذا تختار بورصتنا؟',
+      subtitle: 'منصة تداول عملات مشفرة احترافية بأمان على المستوى المؤسسي',
       feature1Title: 'سريع للغاية',
-      feature1Desc: 'أكمل المعاملات في أقل من 5 دقائق. عمليتنا المبسطة تضمن التسليم السريع.',
+      feature1Desc: 'معاملات فورية مع تسوية في الوقت الفعلي. عمليتنا المبسطة تضمن تنفيذ صفقاتك في ثوانٍ.',
       feature2Title: 'أمان بمستوى البنوك',
-      feature2Desc: 'متداول معتمد من BingX مع امتثال كامل. أموالك محمية دائمًا.',
-      feature3Title: 'دعم 24/7',
-      feature3Desc: 'دعم WhatsApp مباشر لجميع أسئلتك. نحن هنا عندما تحتاجنا.',
-      feature4Title: 'منصة معتمدة',
-      feature4Desc: 'معتمدة رسميًا من قبل BingX Exchange. تتطلب المعاملات الكبيرة التحقق من KYC.'
+      feature2Desc: 'بورصة معتمدة من BingX مع امتثال تنظيمي كامل. أموالك محمية بتدابير أمنية رائدة في الصناعة.',
+      feature3Title: 'دعم محترف على مدار الساعة',
+      feature3Desc: 'دعم WhatsApp مباشر من متداولينا المحترفين. احصل على مساعدة فورية في أي وقت تحتاجه.',
+      feature4Title: 'معتمد ومرخص',
+      feature4Desc: 'معتمد رسميًا من قبل BingX Exchange. نعمل بشفافية كاملة وامتثال تنظيمي.'
     },
     howItWorks: {
       title: 'كيف يعمل',
-      subtitle: 'عملية بسيطة من 3 خطوات لتبادل USDT',
+      subtitle: 'عملية بسيطة من 3 خطوات لتبادل USDT سلس',
       step1Title: 'اختر المبلغ',
-      step1Desc: 'أدخل مقدار USDT الذي تريد شراءه أو بيعه',
-      step2Title: 'التحقق من الهوية',
-      step2Desc: 'أكمل التحقق السريع من KYC للمعاملات الآمنة',
-      step3Title: 'أكمل التجارة',
-      step3Desc: 'استلم أموالك على الفور عبر التحويل المصرفي'
+      step1Desc: 'حدد ما إذا كنت تريد شراء أو بيع USDT وأدخل المبلغ المطلوب',
+      step2Title: 'اتصل بالمتداول',
+      step2Desc: 'اتصل مباشرة بمتداولنا المعتمد عبر WhatsApp للمعالجة الفورية',
+      step3Title: 'أكمل التبادل',
+      step3Desc: 'استلم أموالك على الفور عبر التحويل المصرفي مع تأكيد المعاملة الكامل'
     },
     stats: {
-      users: 'مستخدمون سعداء',
-      transactions: 'المعاملات',
-      volume: 'حجم التداول'
+      users: 'المتداولون النشطون',
+      transactions: 'المعاملات اليومية',
+      volume: 'الحجم الشهري'
     },
     calculator: {
-      title: 'حاسبة USDT',
-      subtitle: 'احسب أسعار الصرف على الفور',
+      title: 'حاسبة الصرف',
+      subtitle: 'احسب أسعار الصرف والرسوم على الفور',
       amount: 'المبلغ',
       youPay: 'أنت تدفع',
       youReceive: 'أنت تستلم',
@@ -263,22 +287,22 @@ export const translations = {
       sell: 'بيع'
     },
     security: {
-      title: 'أمان بمستوى البنوك',
-      subtitle: 'أموالك محمية دائمًا',
+      title: 'أمان على المستوى المؤسسي',
+      subtitle: 'أصولك محمية ببنية تحتية أمنية متطورة',
       compliance: 'الامتثال التنظيمي الكامل',
-      encryption: 'التشفير من طرف إلى طرف',
-      verification: 'التحقق من الهوية',
-      insurance: 'حماية تأمين الأموال'
+      encryption: 'تشفير عسكري',
+      verification: 'التحقق متعدد الطبقات',
+      insurance: 'تغطية تأمين الأصول'
     },
     reviews: {
-      title: 'تقييمات العملاء',
-      subtitle: 'انضم إلى أكثر من 10,000 عميل راضٍ',
-      review1: '"خدمة سريعة بشكل لا يصدق! استلمت USDT الخاص بي في غضون 3 دقائق. موصى به للغاية!"',
-      review2: '"أفضل سعر صرف في إسرائيل. خدمة العملاء استثنائية."',
-      review3: '"محترف جدًا وموثوق. أستخدمهم منذ 6 أشهر الآن."',
-      review4: '"عملية سلسة، أسعار رائعة. سأستخدمها بالتأكيد مرة أخرى!"',
-      review5: '"أخيرًا بورصة عملات مشفرة موثوقة في إسرائيل. تجربة رائعة!"',
-      review6: '"معاملات سريعة، دعم ممتاز. الأفضل في السوق!"',
+      title: 'موثوق به من قبل الآلاف',
+      subtitle: 'انضم إلى أكثر من 10,000 متداول راضٍ في جميع أنحاء العالم',
+      review1: '"سريع وموثوق بشكل لا يصدق! أفضل أسعار تبادل USDT في إسرائيل. خدمة احترافية للغاية."',
+      review2: '"أفضل منصة تبادل استخدمتها. أسعار شفافة، معاملات فورية، ودعم ممتاز."',
+      review3: '"متداولون محترفون جدًا. أستخدم خدمتهم منذ 8 أشهر الآن. لم تكن هناك أي مشاكل أبدًا."',
+      review4: '"عملية سلسة، أسعار تنافسية. دعم WhatsApp سريع الاستجابة بشكل لا يصدق!"',
+      review5: '"أخيرًا بورصة عملات مشفرة موثوقة في إسرائيل. لا يمكن أن أكون أكثر سعادة بالخدمة."',
+      review6: '"معاملات سريعة، تسعير شفاف، دعم محترف. موصى به بشدة!"',
       name1: 'ديفيد م.',
       name2: 'سارة ل.',
       name3: 'مايكل ر.',
@@ -287,14 +311,26 @@ export const translations = {
       name6: 'دانيال س.'
     },
     footer: {
-      description: 'منصة تبادل USDT إلى ILS الأكثر موثوقية في إسرائيل.',
+      description: 'منصة تبادل USDT إلى ILS المتميزة في إسرائيل بأسعار تنافسية.',
       rights: 'جميع الحقوق محفوظة.',
       terms: 'شروط الخدمة',
       privacy: 'سياسة الخصوصية',
       contact: 'اتصل بنا'
     },
     notice: {
-      kyc: 'تتطلب المعاملات الكبيرة التحقق من الهوية للامتثال الأمني.'
+      kyc: 'قد تتطلب المعاملات الكبيرة التحقق من الهوية للامتثال والأمان.'
+    },
+    tradeModal: {
+      buyTitle: 'شراء USDT',
+      sellTitle: 'بيع USDT',
+      subtitle: 'أدخل المبلغ الذي تريد تداوله',
+      usdtAmount: 'مبلغ USDT',
+      ilsAmount: 'مبلغ الشيكل (₪)',
+      exchangeRate: 'سعر الصرف',
+      contactTrader: 'اتصل بالمتداول',
+      cancel: 'إلغاء',
+      errorTitle: 'مبلغ غير صالح',
+      errorAmount: 'يرجى إدخال مبلغ صالح أكبر من 0'
     }
   }
 };
