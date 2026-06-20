@@ -4,7 +4,8 @@
       "src": "frontend/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "installCommand": "npm install --legacy-peer-deps"
+        "installCommand": "yarn install",
+        "buildCommand": "yarn build"
       }
     },
     {
