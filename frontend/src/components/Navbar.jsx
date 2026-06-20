@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { supportedLanguages } from '../i18n/translations';
-import { Menu, X, Globe, Settings } from 'lucide-react';
+import { Menu, X, Globe } from 'lucide-react';
 import { Button } from './ui/button';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -70,7 +70,7 @@ const Navbar = () => {
             </button>
           </div>
 
-          {/* Right Side - Language Switcher & Admin */}
+          {/* Right Side - Language Switcher */}
           <div className="flex items-center gap-4">
             {/* Language Switcher */}
             <DropdownMenu>
@@ -99,17 +99,6 @@ const Navbar = () => {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-
-            {/* Admin Button - Desktop */}
-            <Button
-              onClick={() => navigate('/admin')}
-              variant="ghost"
-              size="sm"
-              className="hidden md:flex items-center gap-2 text-gray-300 hover:text-white hover:bg-white/10"
-            >
-              <Settings className="w-4 h-4" />
-              {t.navbar.admin}
-            </Button>
 
             {/* Mobile Menu Toggle */}
             <button
@@ -155,14 +144,6 @@ const Navbar = () => {
               >
                 {t.navbar.reviews}
               </button>
-              <Button
-                onClick={() => {navigate('/admin'); setIsMobileMenuOpen(false);}}
-                variant="outline"
-                className="border-white/10 hover:bg-white/5 text-gray-300 mx-4 flex items-center justify-center gap-2"
-              >
-                <Settings className="w-4 h-4" />
-                {t.navbar.admin}
-              </Button>
             </div>
           </div>
         )}

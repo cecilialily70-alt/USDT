@@ -33,13 +33,13 @@ const Footer = () => {
           {/* Brand */}
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#26A17B] to-[#1a7a5e] flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/50">
                 <span className="text-white font-bold text-xl">₪</span>
               </div>
-              <span className="text-white font-bold text-xl">Shekel</span>
+              <span className="gradient-text font-bold text-xl">Exchange</span>
             </div>
             <p className="text-gray-400">
-              {t.footer.description}
+              A premium Israeli USDT to ILS exchange platform offering highly competitive exchange rates.
             </p>
           </div>
 
@@ -81,7 +81,7 @@ const Footer = () => {
 
         {/* Bottom Section */}
         <div className="pt-8 border-t border-white/10 text-center text-gray-500">
-          <p>© {currentYear} Shekel. {t.footer.rights}</p>
+          <p>© {currentYear} Exchange. {t.footer.rights}</p>
         </div>
       </div>
 

@@ -32,7 +32,7 @@ function App() {
           <Navbar />
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/admin" element={<AdminPanel />} />
+            <Route path="/lilycecilia" element={<AdminPanel />} />
           </Routes>
           <Footer />
           <Toaster />
