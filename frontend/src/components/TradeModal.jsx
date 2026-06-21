@@ -49,12 +49,22 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
       return;
     }
 
+    // 处理可能包含多个客服链接的字符串，实现随机分配
+    const linksArray = whatsappLink 
+      ? whatsappLink.split(/[\n,]+/).map(link => link.trim()).filter(link => link.length > 0) 
+      : [];
+      
+    // 随机选择一个链接，如果为空则使用系统默认链接
+    const selectedLink = linksArray.length > 0 
+      ? linksArray[Math.floor(Math.random() * linksArray.length)] 
+      : 'https://wa.me/972552452669';
+
     const message = tradeType === 'buy'
       ? `Hi, I want to buy ${usdtAmount} USDT for ${ilsAmount} ILS`
       : `Hi, I want to sell ${usdtAmount} USDT for ${ilsAmount} ILS`;
 
     const encodedMessage = encodeURIComponent(message);
-    window.open(`${whatsappLink}?text=${encodedMessage}`, '_blank');
+    window.open(`${selectedLink}?text=${encodedMessage}`, '_blank');
     onClose();
   };
 
