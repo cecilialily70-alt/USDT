@@ -22,7 +22,6 @@ const AdminPanel = () => {
     whatsappLink: 'https://wa.me/972552452669'
   });
 
-  // 安全锁相关的 State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
 
@@ -43,6 +42,7 @@ const AdminPanel = () => {
     }
   };
 
+  // ⚠️ 核心修改：增加了 alert 详细报错雷达
   const handleSave = async () => {
     setLoading(true);
     try {
@@ -51,6 +51,10 @@ const AdminPanel = () => {
         description: 'Configuration updated successfully!',
       });
     } catch (error) {
+      // 弹出真实的服务器错误原因
+      const errorMsg = error.response?.data?.detail || error.message || "无法连接到后端";
+      alert("保存失败！真实的服务器报错原因是：\n\n" + JSON.stringify(errorMsg));
+      
       toast.error('Save Failed', {
         description: 'Could not save settings. Please try again.',
       });
@@ -66,14 +70,12 @@ const AdminPanel = () => {
     }));
   };
 
-  // 密码验证与锁定逻辑
   const handleLogin = (e) => {
     if (e && e.key && e.key !== 'Enter') return;
     
     const now = Date.now();
     const lockUntil = localStorage.getItem('admin_lock_until');
     
-    // 如果处于锁定时间内容，静默拒绝，清空输入框
     if (lockUntil && now < parseInt(lockUntil)) {
       setPassword('');
       return; 
@@ -87,17 +89,15 @@ const AdminPanel = () => {
       let attempts = parseInt(localStorage.getItem('admin_failed_attempts') || '0');
       attempts += 1;
       
-      // 错误达到3次，锁定 6 小时 (6 * 60 * 60 * 1000 毫秒)
       if (attempts >= 3) {
         localStorage.setItem('admin_lock_until', (now + 6 * 60 * 60 * 1000).toString());
       }
       
       localStorage.setItem('admin_failed_attempts', attempts.toString());
-      setPassword(''); // 密码错误不弹提示，直接清空
+      setPassword('');
     }
   };
 
-  // 如果未登录，只渲染密码输入界面
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#06080F] via-[#0a0e1a] to-[#0F1419] flex flex-col items-center justify-center px-4">
@@ -121,16 +121,11 @@ const AdminPanel = () => {
     );
   }
 
-  // 登录成功后渲染完整的管理后台
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#06080F] via-[#0a0e1a] to-[#0F1419] py-20">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
-          <Button
-            onClick={() => navigate('/')}
-            variant="ghost"
-            className="text-gray-300 hover:text-white hover:bg-white/10 mb-4 -ms-4 transition-all duration-300"
-          >
+          <Button onClick={() => navigate('/')} variant="ghost" className="text-gray-300 hover:text-white hover:bg-white/10 mb-4 -ms-4 transition-all duration-300">
             <ArrowLeft className="w-4 h-4 me-2" />
             Back to Home
           </Button>
@@ -187,46 +182,9 @@ const AdminPanel = () => {
             </div>
 
             <div className="flex gap-4 pt-6 border-t border-white/10">
-              <Button
-                onClick={handleSave}
-                disabled={loading}
-                className="flex-1 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-600 hover:from-blue-600 hover:via-purple-600 hover:to-blue-700 text-white h-14 text-lg font-semibold shadow-xl hover:shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105"
-              >
-                {loading ? (
-                  <>
-                    <RefreshCw className="w-5 h-5 me-2 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-5 h-5 me-2" />
-                    Save Settings
-                  </>
-                )}
+              <Button onClick={handleSave} disabled={loading} className="flex-1 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-600 hover:from-blue-600 hover:via-purple-600 hover:to-blue-700 text-white h-14 text-lg font-semibold shadow-xl hover:shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105">
+                {loading ? (<><RefreshCw className="w-5 h-5 me-2 animate-spin" />Saving...</>) : (<><Save className="w-5 h-5 me-2" />Save Settings</>)}
               </Button>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="glass-card p-6 mt-6 border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 shadow-xl shadow-purple-500/10">
-          <h3 className="text-xl font-bold gradient-text mb-4 flex items-center gap-2">
-            <span className="text-2xl">👀</span>
-            Live Preview
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-gradient-to-br from-green-500/10 to-emerald-500/5 rounded-xl p-6 border border-green-500/30 hover:border-green-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/20">
-              <div className="text-sm text-gray-400 mb-2 flex items-center gap-2">
-                <span className="text-green-400">●</span>
-                Buy USDT
-              </div>
-              <div className="text-3xl font-bold text-green-400">1 USDT = {config.buyRate} ILS</div>
-            </div>
-            <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/5 rounded-xl p-6 border border-blue-500/30 hover:border-blue-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/20">
-              <div className="text-sm text-gray-400 mb-2 flex items-center gap-2">
-                <span className="text-blue-400">●</span>
-                Sell USDT
-              </div>
-              <div className="text-3xl font-bold text-blue-400">1 USDT = {config.sellRate} ILS</div>
             </div>
           </div>
         </Card>
