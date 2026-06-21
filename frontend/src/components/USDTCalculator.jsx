@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -6,6 +6,10 @@ import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Calculator, TrendingUp, TrendingDown } from 'lucide-react';
 import { toast } from 'sonner';
+import axios from 'axios';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
 
 const USDTCalculator = () => {
   const { t } = useLanguage();
@@ -13,10 +17,29 @@ const USDTCalculator = () => {
   const [amount, setAmount] = useState('');
   const [result, setResult] = useState(null);
 
-  // Mock exchange rates
-  const buyRate = 4.4;
-  const sellRate = 3.5;
-  const processingFee = 0.02; // 2%
+  // 初始化汇率状态
+  const [config, setConfig] = useState({
+    buyRate: 4.4,
+    sellRate: 3.3,
+  });
+
+  // 组件加载时获取后台配置
+  useEffect(() => {
+    fetchConfig();
+  }, []);
+
+  const fetchConfig = async () => {
+    try {
+      const response = await axios.get(`${API}/config`);
+      if (response.data) {
+        setConfig(response.data);
+      }
+    } catch (error) {
+      console.log('Using default config');
+    }
+  };
+
+  const processingFee = 0.02; // 2% 处理费
 
   const calculateExchange = () => {
     if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
@@ -28,7 +51,8 @@ const USDTCalculator = () => {
 
     const amountNum = parseFloat(amount);
     const isBuying = activeTab === 'buy';
-    const rate = isBuying ? buyRate : sellRate;
+    // 使用从后台获取到的最新汇率
+    const rate = isBuying ? config.buyRate : config.sellRate;
     const fee = amountNum * processingFee;
     const total = isBuying ? (amountNum * rate) + fee : (amountNum * rate) - fee;
 
