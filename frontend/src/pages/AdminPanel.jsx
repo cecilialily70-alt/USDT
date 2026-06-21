@@ -4,7 +4,6 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card } from '../components/ui/card';
-import { Textarea } from '../components/ui/textarea';
 import { ArrowLeft, Save, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -119,21 +118,22 @@ const AdminPanel = () => {
               </p>
             </div>
 
+            {/* 这里是我们刚刚替换的多行输入框 */}
             <div>
               <Label htmlFor="whatsappLink" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
                 WhatsApp Contact Links (随机客服分配)
               </Label>
-              <Textarea
+              <textarea
                 id="whatsappLink"
                 value={config.whatsappLink}
                 onChange={(e) => handleInputChange('whatsappLink', e.target.value)}
-                className="bg-[#0a0e1a]/80 border-purple-500/30 focus:border-purple-500 text-white text-lg min-h-[120px] hover:border-purple-500/50 transition-all duration-300"
+                className="w-full rounded-md bg-[#0a0e1a]/80 border border-purple-500/30 focus:border-purple-500 text-white text-lg p-4 min-h-[120px] hover:border-purple-500/50 transition-all duration-300 outline-none"
                 placeholder="https://wa.me/972552452669&#10;https://wa.me/972551234567"
               />
               <p className="text-gray-500 text-sm mt-2 flex items-center gap-2">
                 <span className="text-purple-400">●</span>
-                您可以输入多个 WhatsApp 链接，每行一个（按回车换行）。客户点击时将随机分配一个客服。
+                您可以输入多个 WhatsApp 链接，每行一个（直接按回车换行）。客户点击时将随机分配一个客服。
               </p>
             </div>
 
