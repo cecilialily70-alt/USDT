@@ -5,7 +5,8 @@
       "use": "@vercel/static-build",
       "config": {
         "installCommand": "yarn install",
-        "buildCommand": "yarn build"
+        "buildCommand": "yarn build",
+        "outputDirectory": "build"
       }
     },
     {
@@ -19,8 +20,12 @@
       "destination": "backend/server.py"
     },
     {
+      "source": "/static/(.*)",
+      "destination": "/frontend/build/static/$1"
+    },
+    {
       "source": "/(.*)",
-      "destination": "/frontend/$1"
+      "destination": "/frontend/build/index.html"
     }
   ]
 }
