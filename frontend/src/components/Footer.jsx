@@ -19,7 +19,16 @@ const Footer = () => {
   const fetchWhatsappLink = async () => {
     try {
       const response = await axios.get(`${API}/config`);
-      setWhatsappLink(response.data.whatsappLink);
+      const rawLinks = response.data.whatsappLink;
+      
+      // 按换行或逗号分割，过滤空行
+      const linksArray = rawLinks ? rawLinks.split(/[\n,]+/).map(link => link.trim()).filter(link => link.length > 0) : [];
+      
+      if (linksArray.length > 0) {
+        // 随机选择一个链接设置给右下角的悬浮按钮
+        const randomLink = linksArray[Math.floor(Math.random() * linksArray.length)];
+        setWhatsappLink(randomLink);
+      }
     } catch (error) {
       console.log('Using default WhatsApp link');
     }
@@ -28,9 +37,7 @@ const Footer = () => {
   return (
     <footer className="relative bg-gradient-to-b from-[#0B0F19] to-[#050810] border-t border-white/10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Top Section */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-          {/* Brand */}
           <div>
             <div className="flex items-center gap-2 mb-4">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/50">
@@ -43,7 +50,6 @@ const Footer = () => {
             </p>
           </div>
 
-          {/* Quick Links */}
           <div>
             <h3 className="text-white font-semibold mb-4">Quick Links</h3>
             <div className="flex flex-col gap-2">
@@ -62,7 +68,6 @@ const Footer = () => {
             </div>
           </div>
 
-          {/* Legal */}
           <div>
             <h3 className="text-white font-semibold mb-4">Legal</h3>
             <div className="flex flex-col gap-2">
@@ -79,13 +84,11 @@ const Footer = () => {
           </div>
         </div>
 
-        {/* Bottom Section */}
         <div className="pt-8 border-t border-white/10 text-center text-gray-500">
           <p>© {currentYear} Exchange. {t.footer.rights}</p>
         </div>
       </div>
 
-      {/* WhatsApp Floating Button */}
       <a
         href={whatsappLink}
         target="_blank"
