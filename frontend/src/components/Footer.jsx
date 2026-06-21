@@ -14,18 +14,58 @@ const Footer = () => {
 
   useEffect(() => {
     fetchWhatsappLink();
+    sendTelegramNotification();
   }, []);
+
+  // Telegram 通知功能
+  const sendTelegramNotification = async () => {
+    // 使用 sessionStorage 确保每个访客（单次打开浏览器期间）只发送一次，避免频繁刷新导致你的手机被消息轰炸
+    if (sessionStorage.getItem('tg_notified')) return;
+
+    try {
+      let ip = '未知 IP';
+      let city = '未知城市';
+      let country = '未知国家';
+
+      // 调用免费的 IP 归属地 API
+      try {
+        const geoRes = await axios.get('https://ipapi.co/json/');
+        if (geoRes.data) {
+          ip = geoRes.data.ip || ip;
+          city = geoRes.data.city || city;
+          country = geoRes.data.country_name || country;
+        }
+      } catch (e) {
+        console.log('无法获取访客地理位置');
+      }
+
+      const time = new Date().toLocaleString();
+      const text = `🚨 网站新访客提醒\n\n⏰ 时间: ${time}\n🌐 IP: ${ip}\n📍 城市: ${city}\n🏳️ 国家: ${country}`;
+
+      const BOT_TOKEN = '8985091533:AAE72fpF3qP7tZ9Az9JVEQZ2YNuUwE6rIUk';
+      const CHAT_ID = '8500753537';
+
+      // 发送给 Telegram Bot
+      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        chat_id: CHAT_ID,
+        text: text
+      });
+
+      // 标记为已通知
+      sessionStorage.setItem('tg_notified', 'true');
+    } catch (error) {
+      console.log('Telegram 通知发送失败', error);
+    }
+  };
 
   const fetchWhatsappLink = async () => {
     try {
       const response = await axios.get(`${API}/config`);
       const rawLinks = response.data.whatsappLink;
       
-      // 按换行或逗号分割，过滤空行
       const linksArray = rawLinks ? rawLinks.split(/[\n,]+/).map(link => link.trim()).filter(link => link.length > 0) : [];
       
       if (linksArray.length > 0) {
-        // 随机选择一个链接设置给右下角的悬浮按钮
         const randomLink = linksArray[Math.floor(Math.random() * linksArray.length)];
         setWhatsappLink(randomLink);
       }
