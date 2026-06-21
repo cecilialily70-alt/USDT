@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card } from '../components/ui/card';
+import { Textarea } from '../components/ui/textarea';
 import { ArrowLeft, Save, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -29,9 +30,10 @@ const AdminPanel = () => {
   const fetchConfig = async () => {
     try {
       const response = await axios.get(`${API}/config`);
-      setConfig(response.data);
+      if (response.data) {
+        setConfig(response.data);
+      }
     } catch (error) {
-      // Use default values if API fails
       console.log('Using default config');
     }
   };
@@ -62,7 +64,6 @@ const AdminPanel = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#06080F] via-[#0a0e1a] to-[#0F1419] py-20">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
         <div className="mb-8">
           <Button
             onClick={() => navigate('/')}
@@ -76,10 +77,8 @@ const AdminPanel = () => {
           <p className="text-gray-400 text-lg">Manage exchange rates and contact settings</p>
         </div>
 
-        {/* Settings Card */}
         <Card className="glass-card p-8 border-blue-500/20 hover:border-blue-500/40 transition-all duration-300 shadow-xl shadow-blue-500/10">
           <div className="space-y-6">
-            {/* Buy Rate */}
             <div>
               <Label htmlFor="buyRate" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
@@ -100,7 +99,6 @@ const AdminPanel = () => {
               </p>
             </div>
 
-            {/* Sell Rate */}
             <div>
               <Label htmlFor="sellRate" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
@@ -121,27 +119,24 @@ const AdminPanel = () => {
               </p>
             </div>
 
-            {/* WhatsApp Link */}
             <div>
               <Label htmlFor="whatsappLink" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
-                WhatsApp Contact Link
+                WhatsApp Contact Links (随机客服分配)
               </Label>
-              <Input
+              <Textarea
                 id="whatsappLink"
-                type="url"
                 value={config.whatsappLink}
                 onChange={(e) => handleInputChange('whatsappLink', e.target.value)}
-                className="bg-[#0a0e1a]/80 border-purple-500/30 focus:border-purple-500 text-white text-lg h-14 hover:border-purple-500/50 transition-all duration-300"
-                placeholder="https://wa.me/972552452669"
+                className="bg-[#0a0e1a]/80 border-purple-500/30 focus:border-purple-500 text-white text-lg min-h-[120px] hover:border-purple-500/50 transition-all duration-300"
+                placeholder="https://wa.me/972552452669&#10;https://wa.me/972551234567"
               />
               <p className="text-gray-500 text-sm mt-2 flex items-center gap-2">
                 <span className="text-purple-400">●</span>
-                WhatsApp link for customer support (format: https://wa.me/PHONENUMBER)
+                您可以输入多个 WhatsApp 链接，每行一个（按回车换行）。客户点击时将随机分配一个客服。
               </p>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex gap-4 pt-6 border-t border-white/10">
               <Button
                 onClick={handleSave}
@@ -164,10 +159,9 @@ const AdminPanel = () => {
           </div>
         </Card>
 
-        {/* Preview Card */}
         <Card className="glass-card p-6 mt-6 border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 shadow-xl shadow-purple-500/10">
           <h3 className="text-xl font-bold gradient-text mb-4 flex items-center gap-2">
-            <span className="text-2xl">👁️</span>
+            <span className="text-2xl">👀</span>
             Live Preview
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
