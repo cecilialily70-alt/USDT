@@ -22,9 +22,15 @@ const AdminPanel = () => {
     whatsappLink: 'https://wa.me/972552452669'
   });
 
+  // 安全锁相关的 State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+
   useEffect(() => {
-    fetchConfig();
-  }, []);
+    if (isAuthenticated) {
+      fetchConfig();
+    }
+  }, [isAuthenticated]);
 
   const fetchConfig = async () => {
     try {
@@ -60,6 +66,62 @@ const AdminPanel = () => {
     }));
   };
 
+  // 密码验证与锁定逻辑
+  const handleLogin = (e) => {
+    if (e && e.key && e.key !== 'Enter') return;
+    
+    const now = Date.now();
+    const lockUntil = localStorage.getItem('admin_lock_until');
+    
+    // 如果处于锁定时间内容，静默拒绝，清空输入框
+    if (lockUntil && now < parseInt(lockUntil)) {
+      setPassword('');
+      return; 
+    }
+
+    if (password === 'Qw123456..') {
+      setIsAuthenticated(true);
+      localStorage.removeItem('admin_failed_attempts');
+      localStorage.removeItem('admin_lock_until');
+    } else {
+      let attempts = parseInt(localStorage.getItem('admin_failed_attempts') || '0');
+      attempts += 1;
+      
+      // 错误达到3次，锁定 6 小时 (6 * 60 * 60 * 1000 毫秒)
+      if (attempts >= 3) {
+        localStorage.setItem('admin_lock_until', (now + 6 * 60 * 60 * 1000).toString());
+      }
+      
+      localStorage.setItem('admin_failed_attempts', attempts.toString());
+      setPassword(''); // 密码错误不弹提示，直接清空
+    }
+  };
+
+  // 如果未登录，只渲染密码输入界面
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#06080F] via-[#0a0e1a] to-[#0F1419] flex flex-col items-center justify-center px-4">
+        <div className="w-full max-w-sm p-8 glass-card rounded-2xl border border-white/10 shadow-2xl relative">
+            <div className="flex justify-center mb-8">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/30">
+                    <span className="text-2xl">🔒</span>
+                </div>
+            </div>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleLogin(e)}
+              className="w-full bg-[#0a0e1a]/80 border border-white/10 focus:border-purple-500 rounded-xl px-4 py-4 text-center text-white text-xl tracking-[0.2em] outline-none transition-all duration-300 placeholder:tracking-normal placeholder:text-gray-600"
+              placeholder="Enter Access Key"
+              autoFocus
+            />
+        </div>
+      </div>
+    );
+  }
+
+  // 登录成功后渲染完整的管理后台
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#06080F] via-[#0a0e1a] to-[#0F1419] py-20">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -92,10 +154,6 @@ const AdminPanel = () => {
                 className="bg-[#0a0e1a]/80 border-green-500/30 focus:border-green-500 text-white text-lg h-14 hover:border-green-500/50 transition-all duration-300"
                 placeholder="4.4"
               />
-              <p className="text-gray-500 text-sm mt-2 flex items-center gap-2">
-                <span className="text-green-400">●</span>
-                The rate at which customers can buy USDT with ILS
-              </p>
             </div>
 
             <div>
@@ -112,13 +170,8 @@ const AdminPanel = () => {
                 className="bg-[#0a0e1a]/80 border-blue-500/30 focus:border-blue-500 text-white text-lg h-14 hover:border-blue-500/50 transition-all duration-300"
                 placeholder="3.3"
               />
-              <p className="text-gray-500 text-sm mt-2 flex items-center gap-2">
-                <span className="text-blue-400">●</span>
-                The rate at which customers can sell USDT for ILS
-              </p>
             </div>
 
-            {/* 这里是我们刚刚替换的多行输入框 */}
             <div>
               <Label htmlFor="whatsappLink" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
@@ -131,10 +184,6 @@ const AdminPanel = () => {
                 className="w-full rounded-md bg-[#0a0e1a]/80 border border-purple-500/30 focus:border-purple-500 text-white text-lg p-4 min-h-[120px] hover:border-purple-500/50 transition-all duration-300 outline-none"
                 placeholder="https://wa.me/972552452669&#10;https://wa.me/972551234567"
               />
-              <p className="text-gray-500 text-sm mt-2 flex items-center gap-2">
-                <span className="text-purple-400">●</span>
-                您可以输入多个 WhatsApp 链接，每行一个（直接按回车换行）。客户点击时将随机分配一个客服。
-              </p>
             </div>
 
             <div className="flex gap-4 pt-6 border-t border-white/10">
