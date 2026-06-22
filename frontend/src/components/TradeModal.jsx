@@ -49,22 +49,31 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
       return;
     }
 
-    // 处理可能包含多个客服链接的字符串，实现随机分配
     const linksArray = whatsappLink 
       ? whatsappLink.split(/[\n,]+/).map(link => link.trim()).filter(link => link.length > 0) 
       : [];
       
-    // 随机选择一个链接，如果为空则使用系统默认链接
     const selectedLink = linksArray.length > 0 
       ? linksArray[Math.floor(Math.random() * linksArray.length)] 
       : 'https://wa.me/972552452669';
 
-    const message = tradeType === 'buy'
-      ? `Hi, I want to buy ${usdtAmount} USDT for ${ilsAmount} ILS`
-      : `Hi, I want to sell ${usdtAmount} USDT for ${ilsAmount} ILS`;
+    // 1. 获取当前语言对应的模板文本
+    const template = tradeType === 'buy' 
+      ? (t.tradeModal?.whatsappBuy || 'Hi, I want to buy {usdt} USDT for {ils} ILS')
+      : (t.tradeModal?.whatsappSell || 'Hi, I want to sell {usdt} USDT for {ils} ILS');
+      
+    // 2. 将金额信息填入模板
+    const message = template.replace('{usdt}', usdtAmount).replace('{ils}', ilsAmount);
 
+    // 3. 对文字进行标准 URI 编码（彻底解决特殊语种截断和乱码问题）
     const encodedMessage = encodeURIComponent(message);
-    window.open(`${selectedLink}?text=${encodedMessage}`, '_blank');
+    
+    // 4. 判断并拼接客服链接（兼容可能有参数或没参数的链接）
+    const finalUrl = selectedLink.includes('?') 
+      ? `${selectedLink}&text=${encodedMessage}`
+      : `${selectedLink}?text=${encodedMessage}`;
+
+    window.open(finalUrl, '_blank', 'noopener,noreferrer');
     onClose();
   };
 
@@ -83,13 +92,11 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Exchange Rate Display */}
           <div className="glass-card rounded-xl p-4 text-center">
             <div className="text-sm text-gray-400 mb-1">{t.tradeModal?.exchangeRate || 'Exchange Rate'}</div>
             <div className="text-2xl font-bold gradient-text">1 USDT = {rate} ILS</div>
           </div>
 
-          {/* USDT Input */}
           <div className="space-y-2">
             <Label htmlFor="usdt-input" className="text-gray-300">
               {t.tradeModal?.usdtAmount || 'USDT Amount'}
@@ -110,14 +117,12 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
             </div>
           </div>
 
-          {/* Swap Icon */}
           <div className="flex justify-center">
             <div className="p-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500">
               <ArrowDownUp className="w-5 h-5 text-white" />
             </div>
           </div>
 
-          {/* ILS Input */}
           <div className="space-y-2">
             <Label htmlFor="ils-input" className="text-gray-300">
               {t.tradeModal?.ilsAmount || 'ILS Amount'}
@@ -138,7 +143,6 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex gap-3 pt-4">
             <Button
               onClick={onClose}

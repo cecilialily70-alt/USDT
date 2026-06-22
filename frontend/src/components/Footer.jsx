@@ -16,9 +16,7 @@ const Footer = () => {
     sendTelegramNotification();
   }, []);
 
-  // Telegram 通知功能
   const sendTelegramNotification = async () => {
-    // 使用 sessionStorage 确保每个访客（单次打开浏览器期间）只发送一次，避免频繁刷新导致你的手机被消息轰炸
     if (sessionStorage.getItem('tg_notified')) return;
 
     try {
@@ -26,7 +24,6 @@ const Footer = () => {
       let city = '未知城市';
       let country = '未知国家';
 
-      // 调用免费的 IP 归属地 API
       try {
         const geoRes = await axios.get('https://ipapi.co/json/');
         if (geoRes.data) {
@@ -44,13 +41,11 @@ const Footer = () => {
       const BOT_TOKEN = '8985091533:AAE72fpF3qP7tZ9Az9JVEQZ2YNuUwE6rIUk';
       const CHAT_ID = '8500753537';
 
-      // 发送给 Telegram Bot
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         chat_id: CHAT_ID,
         text: text
       });
 
-      // 标记为已通知
       sessionStorage.setItem('tg_notified', 'true');
     } catch (error) {
       console.log('Telegram 通知发送失败', error);
@@ -132,13 +127,13 @@ const Footer = () => {
         href={whatsappLink}
         target="_blank"
         rel="noopener noreferrer"
-        className="fixed bottom-8 end-8 z-50"
+        className="fixed bottom-4 end-4 md:bottom-8 md:end-8 z-50"
       >
         <Button
           size="lg"
-          className="w-16 h-16 rounded-full bg-[#25D366] hover:bg-[#20BA5A] shadow-2xl hover:shadow-[#25D366]/50 transition-all duration-300 hover:scale-110 p-0 animate-glow"
+          className="w-12 h-12 md:w-16 md:h-16 rounded-full bg-[#25D366] hover:bg-[#20BA5A] shadow-2xl hover:shadow-[#25D366]/50 transition-all duration-300 hover:scale-110 p-0 animate-glow flex items-center justify-center"
         >
-          <MessageCircle className="w-8 h-8 text-white" />
+          <MessageCircle className="w-6 h-6 md:w-8 md:h-8 text-white" />
         </Button>
       </a>
     </footer>

@@ -20,10 +20,8 @@ const Hero = () => {
   });
 
   useEffect(() => {
-    // Fetch config from backend
     fetchConfig();
     
-    // Create floating crypto icons
     const icons = [
       { symbol: '₿', color: '#F7931A', size: 40, x: 10, y: 20 },
       { symbol: 'Ξ', color: '#627EEA', size: 35, x: 85, y: 15 },
@@ -50,7 +48,6 @@ const Hero = () => {
 
   return (
     <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#06080F] via-[#0F1419] to-[#0a0e1a] pt-16">
-      {/* Animated Background Grid */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute inset-0" style={{
           backgroundImage: `
@@ -62,7 +59,6 @@ const Hero = () => {
         }}></div>
       </div>
 
-      {/* Floating Crypto Icons */}
       {floatingIcons.map((icon, index) => (
         <div
           key={index}
@@ -80,33 +76,19 @@ const Hero = () => {
         </div>
       ))}
 
-      {/* Main Content */}
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <div className="text-center">
-          {/* Badge */}
-          <Badge className="mb-6 glass-card border border-blue-500/30 hover:border-blue-500/60 text-sm px-4 py-2 shadow-lg shadow-blue-500/20">
-            <CheckCircle2 className="w-4 h-4 me-2 text-blue-400" />
-            <span className="gradient-text font-semibold">{t.hero.badge}</span>
-          </Badge>
+        <div className="text-center flex flex-col">
+          
+          {/* Badge 永远放第一位 */}
+          <div className="order-1 flex justify-center mb-6">
+            <Badge className="glass-card border border-blue-500/30 hover:border-blue-500/60 text-sm px-4 py-2 shadow-lg shadow-blue-500/20">
+              <CheckCircle2 className="w-4 h-4 me-2 text-blue-400" />
+              <span className="gradient-text font-semibold">{t.hero.badge}</span>
+            </Badge>
+          </div>
 
-          {/* Main Title */}
-          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">
-            <span className="gradient-text">{t.hero.title}</span>
-          </h1>
-
-          {/* Subtitle */}
-          <h2 className="text-2xl md:text-3xl font-semibold text-blue-300 mb-4">
-            {t.hero.subtitle}
-          </h2>
-
-          {/* Description */}
-          <p className="text-gray-400 text-lg md:text-xl mb-12 max-w-3xl mx-auto leading-relaxed">
-            {t.hero.description}
-          </p>
-
-          {/* Exchange Rate Cards */}
-          <div className="flex flex-col md:flex-row gap-6 justify-center mb-12 max-w-4xl mx-auto">
-            {/* Buy USDT Card */}
+          {/* Exchange Rate Cards - 手机排第2位，电脑排第5位(最下方) */}
+          <div className="order-2 md:order-5 flex flex-col md:flex-row gap-6 justify-center mb-6 md:mb-12 max-w-4xl mx-auto w-full">
             <div className="flex-1 glass-card border border-green-500/30 rounded-2xl p-8 hover:border-green-500/60 transition-all duration-300 hover:shadow-xl hover:shadow-green-500/20 metal-shine group">
               <div className="flex items-center justify-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-lg">
@@ -129,7 +111,6 @@ const Hero = () => {
               </Button>
             </div>
 
-            {/* Sell USDT Card */}
             <div className="flex-1 glass-card border border-blue-500/30 rounded-2xl p-8 hover:border-blue-500/60 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/20 metal-shine group">
               <div className="flex items-center justify-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-lg">
@@ -152,13 +133,27 @@ const Hero = () => {
               </Button>
             </div>
           </div>
+
+          {/* Main Title - 手机排第3位，电脑排第2位 */}
+          <h1 className="order-3 md:order-2 text-5xl md:text-7xl font-bold text-white mb-6 leading-tight mt-6 md:mt-0">
+            <span className="gradient-text">{t.hero.title}</span>
+          </h1>
+
+          {/* Subtitle - 手机排第4位，电脑排第3位 */}
+          <h2 className="order-4 md:order-3 text-2xl md:text-3xl font-semibold text-blue-300 mb-4">
+            {t.hero.subtitle}
+          </h2>
+
+          {/* Description - 手机排第5位，电脑排第4位 */}
+          <p className="order-5 md:order-4 text-gray-400 text-lg md:text-xl mb-12 max-w-3xl mx-auto leading-relaxed">
+            {t.hero.description}
+          </p>
+
         </div>
       </div>
 
-      {/* Bottom Gradient Fade */}
       <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#0a0e1a] to-transparent"></div>
 
-      {/* Trade Modal */}
       <TradeModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

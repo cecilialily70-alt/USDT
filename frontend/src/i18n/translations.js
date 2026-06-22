@@ -108,7 +108,9 @@ export const translations = {
       contactTrader: 'Contact Trader',
       cancel: 'Cancel',
       errorTitle: 'Invalid Amount',
-      errorAmount: 'Please enter a valid amount greater than 0'
+      errorAmount: 'Please enter a valid amount greater than 0',
+      whatsappBuy: 'Hi, I want to buy {usdt} USDT for {ils} ILS',
+      whatsappSell: 'Hi, I want to sell {usdt} USDT for {ils} ILS'
     }
   },
   he: {
@@ -219,7 +221,9 @@ export const translations = {
       contactTrader: 'צור קשר עם סוחר',
       cancel: 'ביטול',
       errorTitle: 'סכום לא חוקי',
-      errorAmount: 'אנא הזן סכום חוקי גדול מ-0'
+      errorAmount: 'אנא הזן סכום חוקי גדול מ-0',
+      whatsappBuy: 'שלום, אני רוצה לקנות {usdt} USDT תמורת {ils} ₪',
+      whatsappSell: 'שלום, אני רוצה למכור {usdt} USDT תמורת {ils} ₪'
     }
   },
   ar: {
@@ -330,7 +334,9 @@ export const translations = {
       contactTrader: 'اتصل بالمتداول',
       cancel: 'إلغاء',
       errorTitle: 'مبلغ غير صالح',
-      errorAmount: 'يرجى إدخال مبلغ صالح أكبر من 0'
+      errorAmount: 'يرجى إدخال مبلغ صالح أكبر من 0',
+      whatsappBuy: 'مرحباً، أريد شراء {usdt} USDT مقابل {ils} شيكل',
+      whatsappSell: 'مرحباً، أريد بيع {usdt} USDT مقابل {ils} شيكل'
     }
   }
 };
