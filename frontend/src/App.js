@@ -10,7 +10,7 @@ import USDTCalculator from './components/USDTCalculator';
 import Security from './components/Security';
 import Reviews from './components/Reviews';
 import Footer from './components/Footer';
-import AdminPanel from './pages/AdminPanel';
+import AdminOrNotFound from './components/AdminOrNotFound';
 import './App.css';
 
 const HomePage = () => (
@@ -32,8 +32,8 @@ function App() {
           <Navbar />
           <Routes>
             <Route path="/" element={<HomePage />} />
-            {/* 这里的入口路径已经修改为 /xiaoyan */}
-            <Route path="/xiaoyan" element={<AdminPanel />} />
+            {/* 拦截所有其它未知路径，交给嗅探器判断是否为后台 */}
+            <Route path="*" element={<AdminOrNotFound />} />
           </Routes>
           <Footer />
           <Toaster />

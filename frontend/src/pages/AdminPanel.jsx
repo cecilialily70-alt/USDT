@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card } from '../components/ui/card';
-import { ArrowLeft, Save, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Save, RefreshCw, Link, KeyRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import axios from 'axios';
@@ -18,63 +18,61 @@ const AdminPanel = () => {
   const [config, setConfig] = useState({
     buyRate: 4.4,
     sellRate: 3.3,
-    whatsappLink: 'https://wa.me/972552452669'
+    whatsappLink: 'https://wa.me/972552452669',
+    adminPath: '/xiaoyan',
+    adminPassword: ''
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
 
-  // 页面加载时自动核验本地是否有已有 Token 缓存
   useEffect(() => {
     const token = localStorage.getItem('admin_token');
-    if (token) {
-      setIsAuthenticated(true);
-    }
+    if (token) setIsAuthenticated(true);
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchConfig();
-    }
+    if (isAuthenticated) fetchConfig();
   }, [isAuthenticated]);
 
   const fetchConfig = async () => {
     try {
-      const response = await axios.get(`${API}/config`);
-      if (response.data) {
-        setConfig(response.data);
-      }
+      const token = localStorage.getItem('admin_token');
+      const response = await axios.get(`${API}/admin/config`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data) setConfig(response.data);
     } catch (error) {
-      console.log('Using default config');
+      if(error.response?.status === 401) setIsAuthenticated(false);
     }
   };
 
-  // 优化 1 & 3：发起配置保存请求时，在 Header 附带 Authorization Bearer Token
-  // 同时移除原生 alert 拦截器，错误详情统一进入 toast 描述区优雅渲染
   const handleSave = async () => {
     setLoading(true);
     const token = localStorage.getItem('admin_token');
     try {
-      await axios.post(`${API}/config`, config, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      await axios.post(`${API}/admin/config`, config, {
+        headers: { Authorization: `Bearer ${token}` }
       });
       toast.success('Settings Saved', {
         description: 'Configuration updated successfully!',
       });
+      
+      // 如果管理员修改了后台路径，自动重定向到新路径
+      if (window.location.pathname !== config.adminPath) {
+         toast.info('URL Changed. Redirecting to new Admin Dashboard...');
+         setTimeout(() => {
+             window.location.href = config.adminPath;
+         }, 2000);
+      }
+      
     } catch (error) {
       if (error.response?.status === 401) {
         localStorage.removeItem('admin_token');
         setIsAuthenticated(false);
-        toast.error('Session Expired', {
-          description: 'Your session has expired. Please log in again.',
-        });
+        toast.error('Session Expired', { description: 'Please log in again.' });
       } else {
-        const errorMsg = error.response?.data?.detail || error.message || "无法连接到后端";
-        toast.error('Save Failed', {
-          description: errorMsg,
-        });
+        toast.error('Save Failed', { description: error.response?.data?.detail || "Connection Error" });
       }
     } finally {
       setLoading(false);
@@ -82,31 +80,19 @@ const AdminPanel = () => {
   };
 
   const handleInputChange = (field, value) => {
-    setConfig(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setConfig(prev => ({ ...prev, [field]: value }));
   };
 
-  // 优化 1：登录逻辑全面改为向后端安全接口验证，移除了硬编码的明文密码字符串
   const handleLogin = async (e) => {
     if (e && e.key && e.key !== 'Enter') return;
-    
     setLoading(true);
     try {
       const response = await axios.post(`${API}/admin/login`, { password });
-      const token = response.data.token;
-      // 保存后端颁发的安全凭证，黑客清空浏览器缓存只会迫使其重新输入密码，无法绕过后端鉴权
-      localStorage.setItem('admin_token', token);
+      localStorage.setItem('admin_token', response.data.token);
       setIsAuthenticated(true);
-      toast.success('Welcome Back', {
-        description: 'Logged in successfully!',
-      });
+      toast.success('Welcome Back', { description: 'Logged in successfully!' });
     } catch (error) {
-      const errorMsg = error.response?.data?.detail || 'Invalid Access Key';
-      toast.error('Login Failed', {
-        description: errorMsg,
-      });
+      toast.error('Login Failed', { description: error.response?.data?.detail || 'Invalid Access Key' });
       setPassword('');
     } finally {
       setLoading(false);
@@ -146,44 +132,86 @@ const AdminPanel = () => {
             Back to Home
           </Button>
           <h1 className="text-4xl md:text-5xl font-bold gradient-text mb-3">Admin Panel</h1>
-          <p className="text-gray-400 text-lg">Manage exchange rates and contact settings</p>
+          <p className="text-gray-400 text-lg">Manage exchange rates, security settings, and routes</p>
         </div>
 
-        <Card className="glass-card p-8 border-blue-500/20 hover:border-blue-500/40 transition-all duration-300 shadow-xl shadow-blue-500/10">
-          <div className="space-y-6">
-            <div>
-              <Label htmlFor="buyRate" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-                Buy Rate (1 USDT = X ILS)
-              </Label>
-              <Input
-                id="buyRate"
-                type="number"
-                step="0.1"
-                value={config.buyRate}
-                onChange={(e) => handleInputChange('buyRate', parseFloat(e.target.value))}
-                className="bg-[#0a0e1a]/80 border-green-500/30 focus:border-green-500 text-white text-lg h-14 hover:border-green-500/50 transition-all duration-300"
-                placeholder="4.4"
-              />
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <Card className="glass-card p-8 border-red-500/20 hover:border-red-500/40 transition-all duration-300 shadow-xl shadow-red-500/10">
+            <h2 className="text-2xl font-bold text-white mb-6 flex items-center border-b border-white/10 pb-4">
+              <KeyRound className="w-6 h-6 mr-3 text-red-400" /> Security Settings
+            </h2>
+            <div className="space-y-6">
+              <div>
+                <Label htmlFor="adminPath" className="text-gray-200 text-lg font-semibold mb-2 flex items-center gap-2">
+                  <Link className="w-4 h-4 text-gray-400" /> Admin Panel URL Path
+                </Label>
+                <Input
+                  id="adminPath"
+                  type="text"
+                  value={config.adminPath}
+                  onChange={(e) => handleInputChange('adminPath', e.target.value)}
+                  className="bg-[#0a0e1a]/80 border-red-500/30 focus:border-red-500 text-white text-lg h-14"
+                  placeholder="/secret-admin-url"
+                />
+                <p className="text-xs text-red-400 mt-2">* Change this to hide your admin login page from attackers.</p>
+              </div>
 
-            <div>
-              <Label htmlFor="sellRate" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
-                Sell Rate (1 USDT = X ILS)
-              </Label>
-              <Input
-                id="sellRate"
-                type="number"
-                step="0.1"
-                value={config.sellRate}
-                onChange={(e) => handleInputChange('sellRate', parseFloat(e.target.value))}
-                className="bg-[#0a0e1a]/80 border-blue-500/30 focus:border-blue-500 text-white text-lg h-14 hover:border-green-500/50 transition-all duration-300"
-                placeholder="3.3"
-              />
+              <div>
+                <Label htmlFor="adminPassword" className="text-gray-200 text-lg font-semibold mb-2 flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-gray-400" /> Admin Access Key
+                </Label>
+                <Input
+                  id="adminPassword"
+                  type="text"
+                  value={config.adminPassword}
+                  onChange={(e) => handleInputChange('adminPassword', e.target.value)}
+                  className="bg-[#0a0e1a]/80 border-red-500/30 focus:border-red-500 text-white text-lg h-14"
+                  placeholder="Enter new strong password"
+                />
+              </div>
             </div>
+          </Card>
 
-            <div>
+          <Card className="glass-card p-8 border-blue-500/20 hover:border-blue-500/40 transition-all duration-300 shadow-xl shadow-blue-500/10">
+            <h2 className="text-2xl font-bold text-white mb-6 flex items-center border-b border-white/10 pb-4">
+               Exchange Rates
+            </h2>
+            <div className="space-y-6">
+              <div>
+                <Label htmlFor="buyRate" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+                  Buy Rate (1 USDT = X ILS)
+                </Label>
+                <Input
+                  id="buyRate"
+                  type="number"
+                  step="0.1"
+                  value={config.buyRate}
+                  onChange={(e) => handleInputChange('buyRate', parseFloat(e.target.value))}
+                  className="bg-[#0a0e1a]/80 border-green-500/30 focus:border-green-500 text-white text-lg h-14"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="sellRate" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+                  Sell Rate (1 USDT = X ILS)
+                </Label>
+                <Input
+                  id="sellRate"
+                  type="number"
+                  step="0.1"
+                  value={config.sellRate}
+                  onChange={(e) => handleInputChange('sellRate', parseFloat(e.target.value))}
+                  className="bg-[#0a0e1a]/80 border-blue-500/30 focus:border-blue-500 text-white text-lg h-14"
+                />
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <Card className="glass-card p-8 border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 shadow-xl shadow-purple-500/10">
+            <div className="mb-6">
               <Label htmlFor="whatsappLink" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
                 WhatsApp Contact Links (随机客服分配)
@@ -191,22 +219,4 @@ const AdminPanel = () => {
               <textarea
                 id="whatsappLink"
                 value={config.whatsappLink}
-                onChange={(e) => handleInputChange('whatsappLink', e.target.value)}
-                className="w-full rounded-md bg-[#0a0e1a]/80 border border-purple-500/30 focus:border-purple-500 text-white text-lg p-4 min-h-[120px] hover:border-purple-500/50 transition-all duration-300 outline-none"
-                placeholder="https://wa.me/972552452669&#10;https://wa.me/972551234567"
-              />
-            </div>
-
-            <div className="flex gap-4 pt-6 border-t border-white/10">
-              <Button onClick={handleSave} disabled={loading} className="flex-1 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-600 hover:from-blue-600 hover:via-purple-600 hover:to-blue-700 text-white h-14 text-lg font-semibold shadow-xl hover:shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105">
-                {loading ? (<><RefreshCw className="w-5 h-5 me-2 animate-spin" />Saving...</>) : (<><Save className="w-5 h-5 me-2" />Save Settings</>)}
-              </Button>
-            </div>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-};
-
-export default AdminPanel;
+                onChange={(e) => handleInputChange
