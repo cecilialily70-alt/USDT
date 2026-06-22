@@ -28,11 +28,15 @@ const AdminPanel = () => {
 
   useEffect(() => {
     const token = localStorage.getItem('admin_token');
-    if (token) setIsAuthenticated(true);
+    if (token) {
+      setIsAuthenticated(true);
+    }
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) fetchConfig();
+    if (isAuthenticated) {
+      fetchConfig();
+    }
   }, [isAuthenticated]);
 
   const fetchConfig = async () => {
@@ -41,9 +45,13 @@ const AdminPanel = () => {
       const response = await axios.get(`${API}/admin/config`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (response.data) setConfig(response.data);
+      if (response.data) {
+        setConfig(response.data);
+      }
     } catch (error) {
-      if(error.response?.status === 401) setIsAuthenticated(false);
+      if (error.response?.status === 401) {
+        setIsAuthenticated(false);
+      }
     }
   };
 
@@ -65,7 +73,6 @@ const AdminPanel = () => {
              window.location.href = config.adminPath;
          }, 2000);
       }
-      
     } catch (error) {
       if (error.response?.status === 401) {
         localStorage.removeItem('admin_token');
@@ -178,7 +185,7 @@ const AdminPanel = () => {
             </h2>
             <div className="space-y-6">
               <div>
-                <Label htmlFor="buyRate" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
+                <Label htmlFor="buyRate" className="text-gray-200 text-lg font-semibold mb-2 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
                   Buy Rate (1 USDT = X ILS)
                 </Label>
@@ -193,7 +200,7 @@ const AdminPanel = () => {
               </div>
 
               <div>
-                <Label htmlFor="sellRate" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
+                <Label htmlFor="sellRate" className="text-gray-200 text-lg font-semibold mb-2 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
                   Sell Rate (1 USDT = X ILS)
                 </Label>
@@ -210,13 +217,4 @@ const AdminPanel = () => {
           </Card>
         </div>
 
-        <Card className="glass-card p-8 border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 shadow-xl shadow-purple-500/10">
-            <div className="mb-6">
-              <Label htmlFor="whatsappLink" className="text-gray-200 text-lg font-semibold mb-2 block flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
-                WhatsApp Contact Links (随机客服分配)
-              </Label>
-              <textarea
-                id="whatsappLink"
-                value={config.whatsappLink}
-                onChange={(e) => handleInputChange
+        <Card className="glass-card p-8 border-purple-500/20 hover:border-purple-500/40 transition-all duration-
