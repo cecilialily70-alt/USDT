@@ -1,10 +1,10 @@
 {
-  "build": {
-    "env": {
-      "REACT_APP_BACKEND_URL": ""
-    }
-  },
+  "version": 2,
   "builds": [
+    {
+      "src": "backend/server.py",
+      "use": "@vercel/python"
+    },
     {
       "src": "frontend/package.json",
       "use": "@vercel/static-build",
@@ -13,10 +13,6 @@
         "buildCommand": "yarn build",
         "outputDirectory": "build"
       }
-    },
-    {
-      "src": "backend/server.py",
-      "use": "@vercel/python"
     }
   ],
   "routes": [
@@ -25,11 +21,12 @@
       "dest": "/backend/server.py"
     },
     {
-      "src": "/(.*)",
+      "src": "/(static/.*)",
       "dest": "/frontend/$1"
     },
     {
-      "handle": "filesystem"
+      "src": "/(.*\\.[a-zA-Z0-9]+)$",
+      "dest": "/frontend/$1"
     },
     {
       "src": "/(.*)",

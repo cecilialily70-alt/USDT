@@ -6,8 +6,7 @@ import { CheckCircle2, ArrowDownUp, TrendingUp } from 'lucide-react';
 import TradeModal from './TradeModal';
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const API = '/api';
 
 const Hero = () => {
   const { t, isRTL } = useLanguage();

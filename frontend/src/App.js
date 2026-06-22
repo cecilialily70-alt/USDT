@@ -32,7 +32,8 @@ function App() {
           <Navbar />
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/lilycecilia" element={<AdminPanel />} />
+            {/* 这里的入口路径已经修改为 /xiaoyan */}
+            <Route path="/xiaoyan" element={<AdminPanel />} />
           </Routes>
           <Footer />
           <Toaster />

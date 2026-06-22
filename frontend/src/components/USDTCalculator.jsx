@@ -8,9 +8,6 @@ import { Calculator, TrendingUp, TrendingDown } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
 const USDTCalculator = () => {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('buy');
@@ -30,7 +27,8 @@ const USDTCalculator = () => {
 
   const fetchConfig = async () => {
     try {
-      const response = await axios.get(`${API}/config`);
+      // 为了完美适配 Vercel，这里直接使用相对路径，省去配置环境变量的烦恼
+      const response = await axios.get('/api/config');
       if (response.data) {
         setConfig(response.data);
       }
@@ -51,15 +49,25 @@ const USDTCalculator = () => {
 
     const amountNum = parseFloat(amount);
     const isBuying = activeTab === 'buy';
-    // 使用从后台获取到的最新汇率
+    
+    // 1. 获取汇率
     const rate = isBuying ? config.buyRate : config.sellRate;
-    const fee = amountNum * processingFee;
-    const total = isBuying ? (amountNum * rate) + fee : (amountNum * rate) - fee;
+    
+    // 2. 算出对应的法币总额 (ILS)
+    const convertedAmountILS = amountNum * rate;
+    
+    // 3. 计算法币的 2% 手续费 (修复单位错误的地方)
+    const feeILS = convertedAmountILS * processingFee;
+    
+    // 4. 计算最终到手/需要支付的法币
+    // 买入：用户需支付 = 兑换额 + 手续费
+    // 卖出：用户会收到 = 兑换额 - 手续费
+    const total = isBuying ? convertedAmountILS + feeILS : convertedAmountILS - feeILS;
 
     setResult({
       amount: amountNum,
       rate: rate,
-      fee: fee,
+      fee: feeILS,
       total: total,
       type: activeTab
     });

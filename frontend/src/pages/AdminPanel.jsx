@@ -9,8 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const API = '/api';
 
 const AdminPanel = () => {
   const { t } = useLanguage();
@@ -24,6 +23,14 @@ const AdminPanel = () => {
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
+
+  // 页面加载时自动核验本地是否有已有 Token 缓存
+  useEffect(() => {
+    const token = localStorage.getItem('admin_token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -42,22 +49,33 @@ const AdminPanel = () => {
     }
   };
 
-  // ⚠️ 核心修改：增加了 alert 详细报错雷达
+  // 优化 1 & 3：发起配置保存请求时，在 Header 附带 Authorization Bearer Token
+  // 同时移除原生 alert 拦截器，错误详情统一进入 toast 描述区优雅渲染
   const handleSave = async () => {
     setLoading(true);
+    const token = localStorage.getItem('admin_token');
     try {
-      await axios.post(`${API}/config`, config);
+      await axios.post(`${API}/config`, config, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
       toast.success('Settings Saved', {
         description: 'Configuration updated successfully!',
       });
     } catch (error) {
-      // 弹出真实的服务器错误原因
-      const errorMsg = error.response?.data?.detail || error.message || "无法连接到后端";
-      alert("保存失败！真实的服务器报错原因是：\n\n" + JSON.stringify(errorMsg));
-      
-      toast.error('Save Failed', {
-        description: 'Could not save settings. Please try again.',
-      });
+      if (error.response?.status === 401) {
+        localStorage.removeItem('admin_token');
+        setIsAuthenticated(false);
+        toast.error('Session Expired', {
+          description: 'Your session has expired. Please log in again.',
+        });
+      } else {
+        const errorMsg = error.response?.data?.detail || error.message || "无法连接到后端";
+        toast.error('Save Failed', {
+          description: errorMsg,
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -70,31 +88,28 @@ const AdminPanel = () => {
     }));
   };
 
-  const handleLogin = (e) => {
+  // 优化 1：登录逻辑全面改为向后端安全接口验证，移除了硬编码的明文密码字符串
+  const handleLogin = async (e) => {
     if (e && e.key && e.key !== 'Enter') return;
     
-    const now = Date.now();
-    const lockUntil = localStorage.getItem('admin_lock_until');
-    
-    if (lockUntil && now < parseInt(lockUntil)) {
-      setPassword('');
-      return; 
-    }
-
-    if (password === 'Qw123456..') {
+    setLoading(true);
+    try {
+      const response = await axios.post(`${API}/admin/login`, { password });
+      const token = response.data.token;
+      // 保存后端颁发的安全凭证，黑客清空浏览器缓存只会迫使其重新输入密码，无法绕过后端鉴权
+      localStorage.setItem('admin_token', token);
       setIsAuthenticated(true);
-      localStorage.removeItem('admin_failed_attempts');
-      localStorage.removeItem('admin_lock_until');
-    } else {
-      let attempts = parseInt(localStorage.getItem('admin_failed_attempts') || '0');
-      attempts += 1;
-      
-      if (attempts >= 3) {
-        localStorage.setItem('admin_lock_until', (now + 6 * 60 * 60 * 1000).toString());
-      }
-      
-      localStorage.setItem('admin_failed_attempts', attempts.toString());
+      toast.success('Welcome Back', {
+        description: 'Logged in successfully!',
+      });
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || 'Invalid Access Key';
+      toast.error('Login Failed', {
+        description: errorMsg,
+      });
       setPassword('');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -110,10 +125,11 @@ const AdminPanel = () => {
             <input
               type="password"
               value={password}
+              disabled={loading}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleLogin(e)}
-              className="w-full bg-[#0a0e1a]/80 border border-white/10 focus:border-purple-500 rounded-xl px-4 py-4 text-center text-white text-xl tracking-[0.2em] outline-none transition-all duration-300 placeholder:tracking-normal placeholder:text-gray-600"
-              placeholder="Enter Access Key"
+              className="w-full bg-[#0a0e1a]/80 border border-white/10 focus:border-purple-500 rounded-xl px-4 py-4 text-center text-white text-xl tracking-[0.2em] outline-none transition-all duration-300 placeholder:tracking-normal placeholder:text-gray-600 disabled:opacity-50"
+              placeholder={loading ? "Verifying..." : "Enter Access Key"}
               autoFocus
             />
         </div>
@@ -162,7 +178,7 @@ const AdminPanel = () => {
                 step="0.1"
                 value={config.sellRate}
                 onChange={(e) => handleInputChange('sellRate', parseFloat(e.target.value))}
-                className="bg-[#0a0e1a]/80 border-blue-500/30 focus:border-blue-500 text-white text-lg h-14 hover:border-blue-500/50 transition-all duration-300"
+                className="bg-[#0a0e1a]/80 border-blue-500/30 focus:border-blue-500 text-white text-lg h-14 hover:border-green-500/50 transition-all duration-300"
                 placeholder="3.3"
               />
             </div>
