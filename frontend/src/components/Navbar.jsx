@@ -28,7 +28,6 @@ const Navbar = () => {
     <nav className="fixed top-0 w-full z-50 glass-card border-b border-white/10 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Logo */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/50 animate-glow">
               <span className="text-white font-bold text-xl">₪</span>
@@ -36,7 +35,6 @@ const Navbar = () => {
             <span className="gradient-text font-bold text-xl">Exchange</span>
           </div>
 
-          {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-8">
             <button onClick={() => scrollToSection('home')} className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium">
               {t.navbar.home}
@@ -55,7 +53,6 @@ const Navbar = () => {
             </button>
           </div>
 
-          {/* Right Side - Language Switcher & Mobile Toggle */}
           <div className="flex items-center gap-4">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -81,7 +78,7 @@ const Navbar = () => {
             </DropdownMenu>
 
             <button
-              className="md:hidden text-gray-300 hover:text-white"
+              className="md:hidden text-gray-300 hover:text-white z-50"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             >
               {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -90,27 +87,35 @@ const Navbar = () => {
         </div>
       </div>
 
-      {/* 移动端菜单改为绝对定位 (absolute)，避免展开时挤压网页下方内容，加入划入动画 */}
       {isMobileMenuOpen && (
-        <div className="md:hidden absolute top-16 left-0 w-full glass-card border-b border-white/10 py-4 shadow-2xl animate-in slide-in-from-top-2">
-          <div className="flex flex-col gap-4 max-w-7xl mx-auto px-6">
-            <button onClick={() => scrollToSection('home')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
-              {t.navbar.home}
-            </button>
-            <button onClick={() => scrollToSection('features')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
-              {t.navbar.features}
-            </button>
-            <button onClick={() => scrollToSection('how-it-works')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
-              {t.navbar.howItWorks}
-            </button>
-            <button onClick={() => scrollToSection('security')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
-              {t.navbar.security}
-            </button>
-            <button onClick={() => scrollToSection('reviews')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
-              {t.navbar.reviews}
-            </button>
+        <>
+          {/* 【核心优化】全屏透明遮罩，点击它即可关闭菜单 */}
+          <div 
+            className="md:hidden fixed inset-0 z-40" 
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          
+          {/* 菜单本身提高层级 (z-50) 显示在遮罩上方 */}
+          <div className="md:hidden absolute top-16 left-0 w-full glass-card border-b border-white/10 py-4 shadow-2xl animate-in slide-in-from-top-2 z-50">
+            <div className="flex flex-col gap-4 max-w-7xl mx-auto px-6">
+              <button onClick={() => scrollToSection('home')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
+                {t.navbar.home}
+              </button>
+              <button onClick={() => scrollToSection('features')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
+                {t.navbar.features}
+              </button>
+              <button onClick={() => scrollToSection('how-it-works')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
+                {t.navbar.howItWorks}
+              </button>
+              <button onClick={() => scrollToSection('security')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
+                {t.navbar.security}
+              </button>
+              <button onClick={() => scrollToSection('reviews')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
+                {t.navbar.reviews}
+              </button>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </nav>
   );

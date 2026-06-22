@@ -74,7 +74,6 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      {/* 优化了手机端排版：强制贴紧底部，并且限制最大高度支持内部滚动 */}
       <DialogContent className="!top-auto !bottom-0 !translate-y-0 sm:!top-[50%] sm:!-translate-y-1/2 w-full sm:max-w-md bg-gradient-to-br from-[#0F1419]/95 to-[#06080F]/95 border-t border-white/10 sm:border rounded-t-3xl sm:rounded-xl backdrop-blur-xl max-h-[85vh] overflow-y-auto pb-8 sm:pb-6">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold">
@@ -105,11 +104,12 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
                 placeholder="0.00"
                 value={usdtAmount}
                 onChange={handleUsdtChange}
-                /* 【核心优化】点击自动全选 */
                 onFocus={(e) => e.target.select()} 
-                className="bg-[#0a0e1a]/50 border-white/10 text-white text-lg h-14 pr-16 focus:border-blue-500 focus:ring-blue-500"
+                /* 【核心优化】使用 pe-16 逻辑边距，自动适配 RTL 和 LTR 语言排版 */
+                className="bg-[#0a0e1a]/50 border-white/10 text-white text-lg h-14 pe-16 focus:border-blue-500 focus:ring-blue-500"
               />
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">
+              {/* 【核心优化】使用 end-4 逻辑定位 */}
+              <div className="absolute end-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold pointer-events-none">
                 USDT
               </div>
             </div>
@@ -133,11 +133,12 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
                 placeholder="0.00"
                 value={ilsAmount}
                 onChange={handleIlsChange}
-                /* 【核心优化】点击自动全选 */
                 onFocus={(e) => e.target.select()}
-                className="bg-[#0a0e1a]/50 border-white/10 text-white text-lg h-14 pr-16 focus:border-blue-500 focus:ring-blue-500"
+                /* 【核心优化】使用 pe-16 逻辑边距 */
+                className="bg-[#0a0e1a]/50 border-white/10 text-white text-lg h-14 pe-16 focus:border-blue-500 focus:ring-blue-500"
               />
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">
+              {/* 【核心优化】使用 end-4 逻辑定位 */}
+              <div className="absolute end-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold pointer-events-none">
                 ₪ ILS
               </div>
             </div>
