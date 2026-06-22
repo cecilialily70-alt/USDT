@@ -57,18 +57,13 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
       ? linksArray[Math.floor(Math.random() * linksArray.length)] 
       : 'https://wa.me/972552452669';
 
-    // 1. 获取当前语言对应的模板文本
     const template = tradeType === 'buy' 
       ? (t.tradeModal?.whatsappBuy || 'Hi, I want to buy {usdt} USDT for {ils} ILS')
       : (t.tradeModal?.whatsappSell || 'Hi, I want to sell {usdt} USDT for {ils} ILS');
       
-    // 2. 将金额信息填入模板
     const message = template.replace('{usdt}', usdtAmount).replace('{ils}', ilsAmount);
-
-    // 3. 对文字进行标准 URI 编码（彻底解决特殊语种截断和乱码问题）
     const encodedMessage = encodeURIComponent(message);
     
-    // 4. 判断并拼接客服链接（兼容可能有参数或没参数的链接）
     const finalUrl = selectedLink.includes('?') 
       ? `${selectedLink}&text=${encodedMessage}`
       : `${selectedLink}?text=${encodedMessage}`;
@@ -79,7 +74,8 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-gradient-to-br from-[#0F1419]/95 to-[#06080F]/95 border border-white/10 backdrop-blur-xl sm:max-w-md">
+      {/* 优化了手机端排版：强制贴紧底部，并且限制最大高度支持内部滚动 */}
+      <DialogContent className="!top-auto !bottom-0 !translate-y-0 sm:!top-[50%] sm:!-translate-y-1/2 w-full sm:max-w-md bg-gradient-to-br from-[#0F1419]/95 to-[#06080F]/95 border-t border-white/10 sm:border rounded-t-3xl sm:rounded-xl backdrop-blur-xl max-h-[85vh] overflow-y-auto pb-8 sm:pb-6">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold">
             <span className="gradient-text">
@@ -109,6 +105,8 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
                 placeholder="0.00"
                 value={usdtAmount}
                 onChange={handleUsdtChange}
+                /* 【核心优化】点击自动全选 */
+                onFocus={(e) => e.target.select()} 
                 className="bg-[#0a0e1a]/50 border-white/10 text-white text-lg h-14 pr-16 focus:border-blue-500 focus:ring-blue-500"
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">
@@ -118,7 +116,7 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
           </div>
 
           <div className="flex justify-center">
-            <div className="p-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500">
+            <div className="p-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 shadow-lg shadow-blue-500/20">
               <ArrowDownUp className="w-5 h-5 text-white" />
             </div>
           </div>
@@ -135,6 +133,8 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
                 placeholder="0.00"
                 value={ilsAmount}
                 onChange={handleIlsChange}
+                /* 【核心优化】点击自动全选 */
+                onFocus={(e) => e.target.select()}
                 className="bg-[#0a0e1a]/50 border-white/10 text-white text-lg h-14 pr-16 focus:border-blue-500 focus:ring-blue-500"
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">

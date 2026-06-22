@@ -25,7 +25,7 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="fixed top-0 w-full z-50 glass-card border-b border-white/10">
+    <nav className="fixed top-0 w-full z-50 glass-card border-b border-white/10 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
@@ -38,55 +38,35 @@ const Navbar = () => {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-8">
-            <button
-              onClick={() => scrollToSection('home')}
-              className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium"
-            >
+            <button onClick={() => scrollToSection('home')} className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium">
               {t.navbar.home}
             </button>
-            <button
-              onClick={() => scrollToSection('features')}
-              className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium"
-            >
+            <button onClick={() => scrollToSection('features')} className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium">
               {t.navbar.features}
             </button>
-            <button
-              onClick={() => scrollToSection('how-it-works')}
-              className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium"
-            >
+            <button onClick={() => scrollToSection('how-it-works')} className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium">
               {t.navbar.howItWorks}
             </button>
-            <button
-              onClick={() => scrollToSection('security')}
-              className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium"
-            >
+            <button onClick={() => scrollToSection('security')} className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium">
               {t.navbar.security}
             </button>
-            <button
-              onClick={() => scrollToSection('reviews')}
-              className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium"
-            >
+            <button onClick={() => scrollToSection('reviews')} className="text-gray-300 hover:text-blue-400 transition-all duration-300 font-medium">
               {t.navbar.reviews}
             </button>
           </div>
 
-          {/* Right Side - Language Switcher */}
+          {/* Right Side - Language Switcher & Mobile Toggle */}
           <div className="flex items-center gap-4">
-            {/* Language Switcher */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex items-center gap-2 text-gray-300 hover:text-white hover:bg-white/10"
-                >
+                <Button variant="ghost" size="sm" className="flex items-center gap-2 text-gray-300 hover:text-white hover:bg-white/10">
                   <Globe className="w-4 h-4" />
                   <span className="hidden sm:inline">
                     {supportedLanguages.find(l => l.code === currentLanguage)?.name}
                   </span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align={isRTL ? 'start' : 'end'} className="glass-card border-white/10">
+              <DropdownMenuContent align={isRTL ? 'start' : 'end'} className="glass-card border-white/10 z-50">
                 {supportedLanguages.map((lang) => (
                   <DropdownMenuItem
                     key={lang.code}
@@ -100,7 +80,6 @@ const Navbar = () => {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Mobile Menu Toggle */}
             <button
               className="md:hidden text-gray-300 hover:text-white"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -109,45 +88,30 @@ const Navbar = () => {
             </button>
           </div>
         </div>
-
-        {/* Mobile Menu */}
-        {isMobileMenuOpen && (
-          <div className="md:hidden py-4 border-t border-white/10">
-            <div className="flex flex-col gap-4">
-              <button
-                onClick={() => scrollToSection('home')}
-                className="text-gray-300 hover:text-blue-400 transition-colors text-start ps-4 font-medium"
-              >
-                {t.navbar.home}
-              </button>
-              <button
-                onClick={() => scrollToSection('features')}
-                className="text-gray-300 hover:text-blue-400 transition-colors text-start ps-4 font-medium"
-              >
-                {t.navbar.features}
-              </button>
-              <button
-                onClick={() => scrollToSection('how-it-works')}
-                className="text-gray-300 hover:text-blue-400 transition-colors text-start ps-4 font-medium"
-              >
-                {t.navbar.howItWorks}
-              </button>
-              <button
-                onClick={() => scrollToSection('security')}
-                className="text-gray-300 hover:text-blue-400 transition-colors text-start ps-4 font-medium"
-              >
-                {t.navbar.security}
-              </button>
-              <button
-                onClick={() => scrollToSection('reviews')}
-                className="text-gray-300 hover:text-blue-400 transition-colors text-start ps-4 font-medium"
-              >
-                {t.navbar.reviews}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* 移动端菜单改为绝对定位 (absolute)，避免展开时挤压网页下方内容，加入划入动画 */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden absolute top-16 left-0 w-full glass-card border-b border-white/10 py-4 shadow-2xl animate-in slide-in-from-top-2">
+          <div className="flex flex-col gap-4 max-w-7xl mx-auto px-6">
+            <button onClick={() => scrollToSection('home')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
+              {t.navbar.home}
+            </button>
+            <button onClick={() => scrollToSection('features')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
+              {t.navbar.features}
+            </button>
+            <button onClick={() => scrollToSection('how-it-works')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
+              {t.navbar.howItWorks}
+            </button>
+            <button onClick={() => scrollToSection('security')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
+              {t.navbar.security}
+            </button>
+            <button onClick={() => scrollToSection('reviews')} className="text-gray-300 hover:text-blue-400 transition-colors text-start font-medium py-2">
+              {t.navbar.reviews}
+            </button>
+          </div>
+        </div>
+      )}
     </nav>
   );
 };

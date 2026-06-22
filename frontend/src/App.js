@@ -36,7 +36,8 @@ function App() {
             <Route path="*" element={<AdminOrNotFound />} />
           </Routes>
           <Footer />
-          <Toaster />
+          {/* 将 Toast 提示移至顶部居中，防止手机端被键盘遮挡 */}
+          <Toaster position="top-center" richColors />
         </div>
       </BrowserRouter>
     </LanguageProvider>
