@@ -217,4 +217,32 @@ const AdminPanel = () => {
           </Card>
         </div>
 
-        <Card className="glass-card p-8 border-purple-500/20 hover:border-purple-500/40 transition-all duration-
+        <Card className="glass-card p-8 border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 shadow-xl shadow-purple-500/10">
+            <div className="mb-6">
+              <Label htmlFor="whatsappLink" className="text-gray-200 text-lg font-semibold mb-2 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
+                WhatsApp Contact Links (随机客服分配)
+              </Label>
+              <textarea
+                id="whatsappLink"
+                value={config.whatsappLink}
+                onChange={(e) => handleInputChange('whatsappLink', e.target.value)}
+                className="w-full rounded-md bg-[#0a0e1a]/80 border border-purple-500/30 focus:border-purple-500 text-white text-lg p-4 min-h-[120px] outline-none"
+                placeholder="Enter WhatsApp links here..."
+              ></textarea>
+            </div>
+
+            <Button onClick={handleSave} disabled={loading} className="w-full bg-gradient-to-r from-blue-500 via-purple-500 to-blue-600 hover:from-blue-600 hover:via-purple-600 hover:to-blue-700 text-white h-14 text-lg font-semibold shadow-xl hover:scale-[1.02] transition-all duration-300">
+              {loading ? (
+                <><RefreshCw className="w-5 h-5 me-2 animate-spin" /> Saving and Applying...</>
+              ) : (
+                <><Save className="w-5 h-5 me-2" /> Save All Configurations</>
+              )}
+            </Button>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+export default AdminPanel;
