@@ -12,12 +12,12 @@ export const useLanguage = () => {
 };
 
 export const LanguageProvider = ({ children }) => {
-  const [currentLanguage, setCurrentLanguage] = useState('en');
-  const [direction, setDirection] = useState('ltr');
+  const [currentLanguage, setCurrentLanguage] = useState('he');
+  const [direction, setDirection] = useState('rtl');
 
   useEffect(() => {
     // Load saved language from localStorage
-    const savedLanguage = localStorage.getItem('language') || 'en';
+    const savedLanguage = localStorage.getItem('language') || 'he';
     changeLanguage(savedLanguage);
   }, []);
 
