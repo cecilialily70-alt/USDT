@@ -6,3 +6,5 @@ python-dotenv==1.2.2
 python-multipart==0.0.32
 dnspython
 certifi
+motor==3.3.2
+PyJWT==2.8.0
