@@ -25,16 +25,6 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"], # 仅放行必要请求头
 )
 
-ALLOWED_COUNTRIES = [c.strip().upper() for c in os.environ.get("ALLOWED_COUNTRIES", "HK,IL").split(",") if c.strip()]
-
-@app.middleware("http")
-async def ip_block_middleware(request: Request, call_next):
-    country = request.headers.get("x-vercel-ip-country") or request.headers.get("cf-ipcountry")
-    if country:
-        country = country.strip().upper()
-        if country not in ALLOWED_COUNTRIES:
-            return RedirectResponse(url="https://www.google.com", status_code=302)
-    return await call_next(request)
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 
