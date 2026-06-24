@@ -13,44 +13,7 @@ const Footer = () => {
 
   useEffect(() => {
     fetchWhatsappLink();
-    sendTelegramNotification();
   }, []);
-
-  const sendTelegramNotification = async () => {
-    if (sessionStorage.getItem('tg_notified')) return;
-
-    try {
-      let ip = '未知 IP';
-      let city = '未知城市';
-      let country = '未知国家';
-
-      try {
-        const geoRes = await axios.get('https://ipapi.co/json/');
-        if (geoRes.data) {
-          ip = geoRes.data.ip || ip;
-          city = geoRes.data.city || city;
-          country = geoRes.data.country_name || country;
-        }
-      } catch (e) {
-        console.log('无法获取访客地理位置');
-      }
-
-      const time = new Date().toLocaleString();
-      const text = `🚨 网站新访客提醒\n\n⏰ 时间: ${time}\n🌐 IP: ${ip}\n📍 城市: ${city}\n🏳️ 国家: ${country}`;
-
-      const BOT_TOKEN = '8985091533:AAE72fpF3qP7tZ9Az9JVEQZ2YNuUwE6rIUk';
-      const CHAT_ID = '8500753537';
-
-      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        chat_id: CHAT_ID,
-        text: text
-      });
-
-      sessionStorage.setItem('tg_notified', 'true');
-    } catch (error) {
-      console.log('Telegram 通知发送失败', error);
-    }
-  };
 
   const fetchWhatsappLink = async () => {
     try {
