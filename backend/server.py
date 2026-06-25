@@ -157,6 +157,11 @@ async def send_telegram_notification(ip: str, user_agent: str):
 # ==========================================
 @app.middleware("http")
 async def ip_block_middleware(request: Request, call_next):
+    # 核心优化 3：预检请求放行。
+    # 确保浏览器能顺利解析后方真实的 403 报错状态码，保证前端正常触发强制跳转机制！
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
     path = request.url.path
     
