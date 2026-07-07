@@ -12,6 +12,7 @@ import {
   removePendingMessage,
   validateIsraeliPhone,
   createClientMessageId,
+  getApiErrorMessage,
 } from '../utils/chatHelpers';
 
 const API = '/api';
@@ -43,6 +44,7 @@ const ChatWidget = () => {
   const [phoneInput, setPhoneInput] = useState('');
   const [needsRegister, setNeedsRegister] = useState(() => !isRegistered());
   const [phoneError, setPhoneError] = useState('');
+  const [registering, setRegistering] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [unread, setUnread] = useState(0);
@@ -187,6 +189,7 @@ const ChatWidget = () => {
       return;
     }
     setPhoneError('');
+    setRegistering(true);
     try {
       await initSession(name, phone);
       localStorage.setItem(NAME_KEY, name);
@@ -196,7 +199,13 @@ const ChatWidget = () => {
       setNeedsRegister(false);
       fetchMessages(null, true);
     } catch (err) {
-      setPhoneError(err.response?.data?.detail || t.chat.registerFailed);
+      setPhoneError(
+        err.response
+          ? getApiErrorMessage(err, t.chat.registerFailed)
+          : t.chat.networkError
+      );
+    } finally {
+      setRegistering(false);
     }
   };
 
@@ -373,9 +382,10 @@ const ChatWidget = () => {
               {phoneError && <p className="text-red-400 text-xs text-center">{phoneError}</p>}
               <Button
                 onClick={handleRegister}
+                disabled={registering}
                 className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
               >
-                {t.chat.startChat}
+                {registering ? t.chat.registering : t.chat.startChat}
               </Button>
             </div>
           ) : (

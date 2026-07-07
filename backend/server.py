@@ -20,17 +20,26 @@ from contextlib import asynccontextmanager
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时执行：为白名单 IP 创建唯一索引，查询速度提升百倍，同时防止并发重复插入
-    await whitelist_collection.create_index("ip", unique=True)
-    await chat_sessions_collection.create_index("session_id", unique=True)
-    await chat_sessions_collection.create_index([("last_message_at", -1)])
-    await chat_messages_collection.create_index([("session_id", 1), ("created_at", 1)])
-    await chat_messages_collection.create_index("message_id", unique=True)
-    await chat_messages_collection.create_index(
-        [("session_id", 1), ("client_message_id", 1)],
-        unique=True,
-        partialFilterExpression={"client_message_id": {"$exists": True, "$type": "string"}},
-    )
+    index_specs = [
+        (whitelist_collection, "ip", {"unique": True}),
+        (chat_sessions_collection, "session_id", {"unique": True}),
+        (chat_sessions_collection, [("last_message_at", -1)], {}),
+        (chat_messages_collection, [("session_id", 1), ("created_at", 1)], {}),
+        (chat_messages_collection, "message_id", {"unique": True}),
+    ]
+    for collection, keys, opts in index_specs:
+        try:
+            await collection.create_index(keys, **opts)
+        except Exception:
+            pass
+    try:
+        await chat_messages_collection.create_index(
+            [("session_id", 1), ("client_message_id", 1)],
+            unique=True,
+            partialFilterExpression={"client_message_id": {"$exists": True, "$type": "string"}},
+        )
+    except Exception:
+        pass
     yield
     # 关闭时的清理操作可以写在这里
 
@@ -140,6 +149,10 @@ async def ip_block_middleware(request: Request, call_next):
         return await call_next(request)
 
     if ip in ["127.0.0.1", "::1", "localhost"]:
+        return await call_next(request)
+
+    # 管理后台 API 不受地区限制，管理员可从全球任意地区登录
+    if path.startswith("/api/admin/"):
         return await call_next(request)
         
     # 第一步：查数据库白名单 (此时已有唯一索引，查询极快)
@@ -332,33 +345,30 @@ async def notify_new_message(visitor_name: str, visitor_phone: str, preview: str
     )
     await send_telegram(text)
 
-async def ensure_session(session_id: str, visitor_name: str, visitor_phone: str, ip: str, is_new: bool = False):
+async def ensure_session(session_id: str, visitor_name: str, visitor_phone: str, ip: str):
     now = datetime.utcnow().isoformat()
-    session = await chat_sessions_collection.find_one({"session_id": session_id})
-    if not session:
-        await chat_sessions_collection.insert_one({
-            "session_id": session_id,
-            "visitor_name": visitor_name,
-            "visitor_phone": visitor_phone,
-            "visitor_ip": ip,
-            "created_at": now,
-            "last_message_at": now,
-            "last_message": "",
-            "unread_admin": 0,
-            "unread_visitor": 0,
-        })
-        if is_new:
-            await notify_new_session(visitor_name, visitor_phone, session_id)
-        return await chat_sessions_collection.find_one({"session_id": session_id})
-    update_fields = {}
-    if visitor_name:
-        update_fields["visitor_name"] = visitor_name
-    if visitor_phone:
-        update_fields["visitor_phone"] = visitor_phone
-    if update_fields:
-        await chat_sessions_collection.update_one({"session_id": session_id}, {"$set": update_fields})
-        session.update(update_fields)
-    return session
+    result = await chat_sessions_collection.update_one(
+        {"session_id": session_id},
+        {
+            "$set": {
+                "visitor_name": visitor_name,
+                "visitor_phone": visitor_phone,
+                "visitor_ip": ip,
+            },
+            "$setOnInsert": {
+                "session_id": session_id,
+                "created_at": now,
+                "last_message_at": now,
+                "last_message": "",
+                "unread_admin": 0,
+                "unread_visitor": 0,
+            },
+        },
+        upsert=True,
+    )
+    session = await chat_sessions_collection.find_one({"session_id": session_id}, {"_id": 0})
+    is_new = result.upserted_id is not None
+    return session, is_new
 
 async def save_image_original(file_bytes: bytes, filename: str, mime_type: str, session_id: str) -> str:
     image_id = str(uuid.uuid4())
@@ -449,27 +459,40 @@ async def create_message_record(
     return serialize_message(message)
 
 @app.post("/api/chat/session")
-async def create_or_get_chat_session(request: Request, data: ChatSessionCreate):
-    session_id = data.session_id.strip()
-    if not session_id:
-        raise HTTPException(status_code=400, detail="session_id is required")
+async def create_or_get_chat_session(
+    request: Request,
+    data: ChatSessionCreate,
+    background_tasks: BackgroundTasks,
+):
+    try:
+        session_id = data.session_id.strip()
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id is required")
 
-    visitor_name = data.visitor_name.strip()
-    if not visitor_name or len(visitor_name) < 2:
-        raise HTTPException(status_code=400, detail="请输入您的姓名")
+        visitor_name = data.visitor_name.strip()
+        if not visitor_name or len(visitor_name) < 2:
+            raise HTTPException(status_code=400, detail="请输入您的姓名")
 
-    visitor_phone = validate_israeli_phone(data.visitor_phone)
-    ip = get_client_ip(request)
+        visitor_phone = validate_israeli_phone(data.visitor_phone)
+        ip = get_client_ip(request)
 
-    existing = await chat_sessions_collection.find_one({"session_id": session_id})
-    session = await ensure_session(session_id, visitor_name, visitor_phone, ip, is_new=not existing)
+        session, is_new = await ensure_session(session_id, visitor_name, visitor_phone, ip)
+        if not session:
+            raise HTTPException(status_code=500, detail="会话创建失败，请重试")
 
-    return {
-        "session_id": session["session_id"],
-        "visitor_name": session.get("visitor_name", visitor_name),
-        "visitor_phone": session.get("visitor_phone", visitor_phone),
-        "unread_visitor": session.get("unread_visitor", 0),
-    }
+        if is_new:
+            background_tasks.add_task(notify_new_session, visitor_name, visitor_phone, session_id)
+
+        return {
+            "session_id": session["session_id"],
+            "visitor_name": session.get("visitor_name", visitor_name),
+            "visitor_phone": session.get("visitor_phone", visitor_phone),
+            "unread_visitor": session.get("unread_visitor", 0),
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="服务器错误，请稍后重试")
 
 @app.get("/api/chat/messages")
 async def get_visitor_messages(
@@ -511,7 +534,7 @@ async def send_visitor_message(
     if not session:
         if not visitor_name or not visitor_phone:
             raise HTTPException(status_code=400, detail="请先完成姓名和手机号验证")
-        session = await ensure_session(session_id, visitor_name, visitor_phone, ip, is_new=True)
+        session, _ = await ensure_session(session_id, visitor_name, visitor_phone, ip)
     else:
         visitor_name = visitor_name or session.get("visitor_name", "")
         visitor_phone = visitor_phone or session.get("visitor_phone", "")
@@ -553,7 +576,7 @@ async def upload_visitor_image(
     if not session:
         if not vname or not vphone:
             raise HTTPException(status_code=400, detail="请先完成姓名和手机号验证")
-        session = await ensure_session(session_id, vname, vphone, ip, is_new=True)
+        session, _ = await ensure_session(session_id, vname, vphone, ip)
     else:
         vname = vname or session.get("visitor_name", "")
         vphone = vphone or session.get("visitor_phone", "")

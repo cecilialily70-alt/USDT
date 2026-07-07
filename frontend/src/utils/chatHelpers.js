@@ -76,3 +76,11 @@ export const formatChatTime = (iso, withDate = false) => {
 };
 
 export const createClientMessageId = () => crypto.randomUUID();
+
+export const getApiErrorMessage = (err, fallback = 'Request failed') => {
+  if (!err?.response) return fallback;
+  const detail = err.response.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map((d) => d.msg || d).join(', ');
+  return fallback;
+};
