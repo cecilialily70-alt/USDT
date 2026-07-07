@@ -111,6 +111,20 @@ export const translations = {
       errorAmount: 'Please enter a valid amount greater than 0',
       whatsappBuy: 'Hi, I want to buy {usdt} USDT for {ils} ILS',
       whatsappSell: 'Hi, I want to sell {usdt} USDT for {ils} ILS'
+    },
+    chat: {
+      title: 'Live Support',
+      subtitle: 'Israel support · Reply within minutes',
+      registerPrompt: 'Enter your name and Israeli mobile number to start',
+      namePlaceholder: 'Your name',
+      phonePlaceholder: '05XXXXXXXX',
+      nameRequired: 'Please enter your name',
+      phoneInvalid: 'Enter a valid Israeli mobile (05XXXXXXXX)',
+      registerFailed: 'Registration failed, please try again',
+      startChat: 'Start Chat',
+      empty: 'Send a message to start the conversation',
+      inputPlaceholder: 'Type a message...',
+      imageTooLarge: 'Image must be under 20MB'
     }
   },
   he: {
@@ -224,6 +238,20 @@ export const translations = {
       errorAmount: 'אנא הזן סכום חוקי גדול מ-0',
       whatsappBuy: 'שלום, אני רוצה לקנות {usdt} USDT תמורת {ils} ₪',
       whatsappSell: 'שלום, אני רוצה למכור {usdt} USDT תמורת {ils} ₪'
+    },
+    chat: {
+      title: 'תמיכה חיה',
+      subtitle: 'תמיכה בישראל · מענה תוך דקות',
+      registerPrompt: 'הזן שם ומספר נייד ישראלי כדי להתחיל',
+      namePlaceholder: 'השם שלך',
+      phonePlaceholder: '05XXXXXXXX',
+      nameRequired: 'אנא הזן את שמך',
+      phoneInvalid: 'הזן מספר נייד ישראלי תקין (05XXXXXXXX)',
+      registerFailed: 'ההרשמה נכשלה, נסה שוב',
+      startChat: 'התחל צ\'אט',
+      empty: 'שלח הודעה כדי להתחיל את השיחה',
+      inputPlaceholder: 'הקלד הודעה...',
+      imageTooLarge: 'התמונה חייבת להיות מתחת ל-20MB'
     }
   },
   ar: {
@@ -337,6 +365,20 @@ export const translations = {
       errorAmount: 'يرجى إدخال مبلغ صالح أكبر من 0',
       whatsappBuy: 'مرحباً، أريد شراء {usdt} USDT مقابل {ils} شيكل',
       whatsappSell: 'مرحباً، أريد بيع {usdt} USDT مقابل {ils} شيكل'
+    },
+    chat: {
+      title: 'دعم مباشر',
+      subtitle: 'دعم إسرائيل · رد خلال دقائق',
+      registerPrompt: 'أدخل اسمك ورقم هاتفك الإسرائيلي للبدء',
+      namePlaceholder: 'اسمك',
+      phonePlaceholder: '05XXXXXXXX',
+      nameRequired: 'يرجى إدخال اسمك',
+      phoneInvalid: 'أدخل رقم هاتف إسرائيلي صالح (05XXXXXXXX)',
+      registerFailed: 'فشل التسجيل، حاول مرة أخرى',
+      startChat: 'ابدأ المحادثة',
+      empty: 'أرسل رسالة لبدء المحادثة',
+      inputPlaceholder: 'اكتب رسالة...',
+      imageTooLarge: 'يجب أن تكون الصورة أقل من 20 ميجابايت'
     }
   }
 };

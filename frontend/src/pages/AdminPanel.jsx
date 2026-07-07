@@ -6,6 +6,7 @@ import { Label } from '../components/ui/label';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { ArrowLeft, Save, RefreshCw, Link as LinkIcon, KeyRound, Shield, Trash2, Plus } from 'lucide-react';
+import AdminChat from '../components/AdminChat';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import axios from 'axios';
@@ -298,6 +299,8 @@ const AdminPanel = () => {
             </div>
           </Card>
         </div>
+
+        <AdminChat />
 
         <Card className="glass-card p-6 md:p-8 border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 shadow-xl shadow-purple-500/10 mb-12">
             <div className="mb-6">

@@ -1,14 +1,15 @@
 import os
+import re
 import certifi
 import asyncio
 import secrets
-import time
+import uuid
 import httpx
-from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pydantic import BaseModel
 import jwt
 from datetime import datetime, timedelta
@@ -21,6 +22,15 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动时执行：为白名单 IP 创建唯一索引，查询速度提升百倍，同时防止并发重复插入
     await whitelist_collection.create_index("ip", unique=True)
+    await chat_sessions_collection.create_index("session_id", unique=True)
+    await chat_sessions_collection.create_index([("last_message_at", -1)])
+    await chat_messages_collection.create_index([("session_id", 1), ("created_at", 1)])
+    await chat_messages_collection.create_index("message_id", unique=True)
+    await chat_messages_collection.create_index(
+        [("session_id", 1), ("client_message_id", 1)],
+        unique=True,
+        partialFilterExpression={"client_message_id": {"$exists": True, "$type": "string"}},
+    )
     yield
     # 关闭时的清理操作可以写在这里
 
@@ -55,6 +65,15 @@ client = AsyncIOMotorClient(MONGO_URL, tlsCAFile=certifi.where())
 db = client.exchange_db
 config_collection = db.config
 whitelist_collection = db.whitelist
+chat_sessions_collection = db.chat_sessions
+chat_messages_collection = db.chat_messages
+chat_images_fs = AsyncIOMotorGridFSBucket(db, bucket_name="chat_images")
+
+MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB 原图不压缩
+ALLOWED_IMAGE_TYPES = {
+    "image/jpeg", "image/jpg", "image/png", "image/gif",
+    "image/webp", "image/heic", "image/heif", "image/bmp",
+}
 
 security = HTTPBearer()
 
@@ -85,72 +104,24 @@ class PathCheckRequest(BaseModel):
 class WhitelistIP(BaseModel):
     ip: str
 
-# ==========================================
-# 访客追踪与防轰炸变量
-# ==========================================
-IP_COOLDOWN = {}
-COOLDOWN_SECONDS = 3600  # 同 IP 1 小时内不会重复发消息
+class ChatMessageCreate(BaseModel):
+    session_id: str
+    content: str = ""
+    visitor_name: str = ""
+    visitor_phone: str = ""
+    client_message_id: str = ""
 
-async def get_visitor_count():
-    counter_doc = await db.counters.find_one_and_update(
-        {"_id": "visitor_id"},
-        {"$inc": {"sequence_value": 1}},
-        upsert=True,
-        return_document=True
-    )
-    return counter_doc["sequence_value"]
+class ChatSessionCreate(BaseModel):
+    session_id: str
+    visitor_name: str
+    visitor_phone: str
 
-def parse_user_agent(ua_string: str):
-    os_info = "未知系统"
-    browser_info = "未知浏览器"
-    if not ua_string:
-        return os_info, browser_info
-        
-    ua_lower = ua_string.lower()
-    
-    if "windows" in ua_lower: os_info = "Windows"
-    elif "mac os x" in ua_lower: os_info = "macOS"
-    elif "android" in ua_lower: os_info = "Android"
-    elif "iphone" in ua_lower or "ipad" in ua_lower: os_info = "iOS"
-    elif "linux" in ua_lower: os_info = "Linux"
-    
-    if "chrome" in ua_lower and "edg" not in ua_lower: browser_info = "Chrome"
-    elif "safari" in ua_lower and "chrome" not in ua_lower: browser_info = "Safari"
-    elif "firefox" in ua_lower: browser_info = "Firefox"
-    elif "edg" in ua_lower: browser_info = "Edge"
-    else: browser_info = ua_string[:30] 
-    
-    return os_info, browser_info
+class AdminChatReply(BaseModel):
+    content: str = ""
+    client_message_id: str = ""
 
-# 异步发送 TG 消息的后台任务
-async def send_telegram_notification(ip: str, user_agent: str):
-    current_time = time.time()
-    
-    if ip in IP_COOLDOWN and current_time - IP_COOLDOWN[ip] < COOLDOWN_SECONDS:
-        return
-        
-    IP_COOLDOWN[ip] = current_time
-    
-    visitor_id = await get_visitor_count()
-    os_info, browser_info = parse_user_agent(user_agent)
-    time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    text = (f"🚨 网站新访客提醒\n\n"
-            f"编号：{visitor_id}\n"
-            f"时间：{time_str}\n"
-            f"IP：{ip}\n"
-            f"操作系统：{os_info}\n"
-            f"浏览器：{browser_info}")
-            
-    BOT_TOKEN = '8985091533:AAE72fpF3qP7tZ9Az9JVEQZ2YNuUwE6rIUk'
-    CHAT_ID = '8500753537'
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    
-    async with httpx.AsyncClient() as client:
-        try:
-            await client.post(url, json={"chat_id": CHAT_ID, "text": text})
-        except Exception:
-            pass
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8985091533:AAE72fpF3qP7tZ9Az9JVEQZ2YNuUwE6rIUk")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "8500753537")
 
 # ==========================================
 # 优化 1: 智能高可用 IP 拦截中间件 (双重接口 + 故障放行)
@@ -249,15 +220,8 @@ async def admin_login(data: LoginRequest):
     return {"token": token}
 
 @app.get("/api/config")
-async def get_public_config(request: Request, background_tasks: BackgroundTasks):
+async def get_public_config():
     config = await config_collection.find_one({}, {"_id": 0}) or {}
-    
-    ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
-    user_agent = request.headers.get("user-agent", "")
-    
-    # 获取页面配置时，异步执行 Telegram 通知，不卡顿
-    background_tasks.add_task(send_telegram_notification, ip, user_agent)
-    
     return {
         "buyRate": config.get("buyRate", 4.4),
         "sellRate": config.get("sellRate", 3.3),
@@ -317,3 +281,393 @@ async def add_whitelist_ip(data: WhitelistIP, token_data: dict = Depends(verify_
 async def remove_whitelist_ip(ip: str, token_data: dict = Depends(verify_token)):
     await whitelist_collection.delete_one({"ip": ip})
     return {"message": "IP 已从白名单移除"}
+
+# ==========================================
+# 在线聊天系统 API
+# ==========================================
+def get_client_ip(request: Request) -> str:
+    return request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
+
+def validate_israeli_phone(phone: str) -> str:
+    cleaned = re.sub(r"[\s\-()]", "", phone.strip())
+    if cleaned.startswith("+972"):
+        cleaned = "0" + cleaned[4:]
+    elif cleaned.startswith("972"):
+        cleaned = "0" + cleaned[3:]
+    if not re.match(r"^05\d{8}$", cleaned):
+        raise HTTPException(status_code=400, detail="请输入有效的以色列手机号码 (05XXXXXXXX)")
+    return cleaned
+
+def serialize_message(doc: dict) -> dict:
+    msg = {k: v for k, v in doc.items() if k != "_id"}
+    if msg.get("image_id"):
+        msg["image_url"] = f"/api/chat/images/{msg['image_id']}"
+    return msg
+
+async def send_telegram(text: str):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=10.0)
+        except Exception:
+            pass
+
+async def notify_new_session(visitor_name: str, visitor_phone: str, session_id: str):
+    text = (
+        f"🆕 新聊天会话\n\n"
+        f"姓名：{visitor_name}\n"
+        f"手机：{visitor_phone}\n"
+        f"会话：{session_id[:8]}..."
+    )
+    await send_telegram(text)
+
+async def notify_new_message(visitor_name: str, visitor_phone: str, preview: str, session_id: str, msg_type: str = "text"):
+    label = "📷 图片消息" if msg_type == "image" else "💬 新聊天消息"
+    text = (
+        f"{label}\n\n"
+        f"姓名：{visitor_name}\n"
+        f"手机：{visitor_phone}\n"
+        f"会话：{session_id[:8]}...\n"
+        f"内容：{preview[:200]}"
+    )
+    await send_telegram(text)
+
+async def ensure_session(session_id: str, visitor_name: str, visitor_phone: str, ip: str, is_new: bool = False):
+    now = datetime.utcnow().isoformat()
+    session = await chat_sessions_collection.find_one({"session_id": session_id})
+    if not session:
+        await chat_sessions_collection.insert_one({
+            "session_id": session_id,
+            "visitor_name": visitor_name,
+            "visitor_phone": visitor_phone,
+            "visitor_ip": ip,
+            "created_at": now,
+            "last_message_at": now,
+            "last_message": "",
+            "unread_admin": 0,
+            "unread_visitor": 0,
+        })
+        if is_new:
+            await notify_new_session(visitor_name, visitor_phone, session_id)
+        return await chat_sessions_collection.find_one({"session_id": session_id})
+    update_fields = {}
+    if visitor_name:
+        update_fields["visitor_name"] = visitor_name
+    if visitor_phone:
+        update_fields["visitor_phone"] = visitor_phone
+    if update_fields:
+        await chat_sessions_collection.update_one({"session_id": session_id}, {"$set": update_fields})
+        session.update(update_fields)
+    return session
+
+async def save_image_original(file_bytes: bytes, filename: str, mime_type: str, session_id: str) -> str:
+    image_id = str(uuid.uuid4())
+    await chat_images_fs.upload_from_stream(
+        image_id,
+        file_bytes,
+        metadata={
+            "session_id": session_id,
+            "filename": filename,
+            "mime_type": mime_type,
+            "size": len(file_bytes),
+            "uploaded_at": datetime.utcnow().isoformat(),
+        },
+    )
+    return image_id
+
+async def delete_image_by_name(image_id: str):
+    files = await chat_images_fs.find({"filename": image_id}).to_list(1)
+    if files:
+        await chat_images_fs.delete(files[0]._id)
+
+async def get_image_by_id(image_id: str):
+    try:
+        stream = await chat_images_fs.open_download_stream_by_name(image_id)
+        data = await stream.read()
+        meta = await chat_images_fs.find({"filename": image_id}).to_list(1)
+        mime = meta[0].metadata.get("mime_type", "application/octet-stream") if meta else "application/octet-stream"
+        filename = meta[0].metadata.get("filename", "image") if meta else "image"
+        return data, mime, filename
+    except Exception:
+        return None, None, None
+
+async def create_message_record(
+    session_id: str,
+    sender: str,
+    msg_type: str,
+    content: str,
+    client_message_id: str = "",
+    image_id: str = "",
+    filename: str = "",
+    mime_type: str = "",
+) -> dict:
+    if client_message_id:
+        existing = await chat_messages_collection.find_one(
+            {"session_id": session_id, "client_message_id": client_message_id},
+            {"_id": 0},
+        )
+        if existing:
+            return serialize_message(existing)
+
+    now = datetime.utcnow().isoformat()
+    message_id = str(uuid.uuid4())
+    preview = content[:100] if content else ("[图片]" if msg_type == "image" else "")
+    if msg_type == "image" and filename:
+        preview = f"[图片] {filename}"
+
+    message = {
+        "message_id": message_id,
+        "session_id": session_id,
+        "sender": sender,
+        "type": msg_type,
+        "content": content,
+        "created_at": now,
+    }
+    if client_message_id:
+        message["client_message_id"] = client_message_id
+    if image_id:
+        message["image_id"] = image_id
+        message["filename"] = filename
+        message["mime_type"] = mime_type
+
+    try:
+        await chat_messages_collection.insert_one(message)
+    except Exception:
+        if client_message_id:
+            existing = await chat_messages_collection.find_one(
+                {"session_id": session_id, "client_message_id": client_message_id},
+                {"_id": 0},
+            )
+            if existing:
+                return serialize_message(existing)
+        raise
+    inc_field = "unread_admin" if sender == "visitor" else "unread_visitor"
+    await chat_sessions_collection.update_one(
+        {"session_id": session_id},
+        {"$set": {"last_message_at": now, "last_message": preview[:100]}, "$inc": {inc_field: 1}},
+    )
+    return serialize_message(message)
+
+@app.post("/api/chat/session")
+async def create_or_get_chat_session(request: Request, data: ChatSessionCreate):
+    session_id = data.session_id.strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    visitor_name = data.visitor_name.strip()
+    if not visitor_name or len(visitor_name) < 2:
+        raise HTTPException(status_code=400, detail="请输入您的姓名")
+
+    visitor_phone = validate_israeli_phone(data.visitor_phone)
+    ip = get_client_ip(request)
+
+    existing = await chat_sessions_collection.find_one({"session_id": session_id})
+    session = await ensure_session(session_id, visitor_name, visitor_phone, ip, is_new=not existing)
+
+    return {
+        "session_id": session["session_id"],
+        "visitor_name": session.get("visitor_name", visitor_name),
+        "visitor_phone": session.get("visitor_phone", visitor_phone),
+        "unread_visitor": session.get("unread_visitor", 0),
+    }
+
+@app.get("/api/chat/messages")
+async def get_visitor_messages(
+    session_id: str = Query(...),
+    since: str = Query(None),
+):
+    query = {"session_id": session_id}
+    if since:
+        query["created_at"] = {"$gt": since}
+
+    cursor = chat_messages_collection.find(query, {"_id": 0}).sort("created_at", 1)
+    messages = [serialize_message(m) for m in await cursor.to_list(length=2000)]
+
+    await chat_sessions_collection.update_one(
+        {"session_id": session_id},
+        {"$set": {"unread_visitor": 0}},
+    )
+
+    return {"messages": messages}
+
+@app.post("/api/chat/messages")
+async def send_visitor_message(
+    request: Request,
+    data: ChatMessageCreate,
+    background_tasks: BackgroundTasks,
+):
+    content = data.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="消息内容不能为空")
+    if len(content) > 2000:
+        raise HTTPException(status_code=400, detail="消息过长")
+
+    session_id = data.session_id.strip()
+    visitor_name = data.visitor_name.strip()
+    visitor_phone = validate_israeli_phone(data.visitor_phone) if data.visitor_phone else ""
+    ip = get_client_ip(request)
+
+    session = await chat_sessions_collection.find_one({"session_id": session_id})
+    if not session:
+        if not visitor_name or not visitor_phone:
+            raise HTTPException(status_code=400, detail="请先完成姓名和手机号验证")
+        session = await ensure_session(session_id, visitor_name, visitor_phone, ip, is_new=True)
+    else:
+        visitor_name = visitor_name or session.get("visitor_name", "")
+        visitor_phone = visitor_phone or session.get("visitor_phone", "")
+
+    message = await create_message_record(
+        session_id, "visitor", "text", content, data.client_message_id
+    )
+    background_tasks.add_task(
+        notify_new_message, visitor_name, visitor_phone, content, session_id, "text"
+    )
+    return {"message": message}
+
+@app.post("/api/chat/upload")
+async def upload_visitor_image(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session_id: str = Form(...),
+    file: UploadFile = File(...),
+    content: str = Form(""),
+    visitor_name: str = Form(""),
+    visitor_phone: str = Form(""),
+    client_message_id: str = Form(""),
+):
+    if not file.content_type or file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="仅支持图片格式 (JPEG/PNG/GIF/WebP/HEIC)")
+
+    file_bytes = await file.read()
+    if len(file_bytes) == 0:
+        raise HTTPException(status_code=400, detail="文件为空")
+    if len(file_bytes) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail="图片不能超过 20MB")
+
+    session_id = session_id.strip()
+    ip = get_client_ip(request)
+    session = await chat_sessions_collection.find_one({"session_id": session_id})
+    vname = visitor_name.strip()
+    vphone = validate_israeli_phone(visitor_phone) if visitor_phone else ""
+
+    if not session:
+        if not vname or not vphone:
+            raise HTTPException(status_code=400, detail="请先完成姓名和手机号验证")
+        session = await ensure_session(session_id, vname, vphone, ip, is_new=True)
+    else:
+        vname = vname or session.get("visitor_name", "")
+        vphone = vphone or session.get("visitor_phone", "")
+
+    filename = file.filename or "image.jpg"
+    image_id = await save_image_original(file_bytes, filename, file.content_type, session_id)
+
+    message = await create_message_record(
+        session_id, "visitor", "image", content.strip(),
+        client_message_id, image_id, filename, file.content_type,
+    )
+    background_tasks.add_task(
+        notify_new_message, vname, vphone, f"[图片] {filename}", session_id, "image"
+    )
+    return {"message": message}
+
+@app.get("/api/chat/images/{image_id}")
+async def serve_chat_image(image_id: str):
+    data, mime, filename = await get_image_by_id(image_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="图片不存在")
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Content-Disposition": f'inline; filename="{filename}"', "Cache-Control": "public, max-age=31536000"},
+    )
+
+@app.get("/api/admin/chat/sessions")
+async def get_chat_sessions(token_data: dict = Depends(verify_token)):
+    cursor = chat_sessions_collection.find({}, {"_id": 0}).sort("last_message_at", -1)
+    sessions = await cursor.to_list(length=200)
+    return {"sessions": sessions}
+
+@app.get("/api/admin/chat/sessions/{session_id}/messages")
+async def get_admin_session_messages(
+    session_id: str,
+    since: str = Query(None),
+    token_data: dict = Depends(verify_token),
+):
+    query = {"session_id": session_id}
+    if since:
+        query["created_at"] = {"$gt": since}
+
+    cursor = chat_messages_collection.find(query, {"_id": 0}).sort("created_at", 1)
+    messages = [serialize_message(m) for m in await cursor.to_list(length=2000)]
+
+    await chat_sessions_collection.update_one(
+        {"session_id": session_id},
+        {"$set": {"unread_admin": 0}},
+    )
+    return {"messages": messages}
+
+@app.post("/api/admin/chat/sessions/{session_id}/messages")
+async def send_admin_reply(
+    session_id: str,
+    data: AdminChatReply,
+    token_data: dict = Depends(verify_token),
+):
+    content = data.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="消息内容不能为空")
+
+    session = await chat_sessions_collection.find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    message = await create_message_record(
+        session_id, "admin", "text", content, data.client_message_id
+    )
+    return {"message": message}
+
+@app.post("/api/admin/chat/sessions/{session_id}/upload")
+async def upload_admin_image(
+    session_id: str,
+    file: UploadFile = File(...),
+    content: str = Form(""),
+    client_message_id: str = Form(""),
+    token_data: dict = Depends(verify_token),
+):
+    if not file.content_type or file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="仅支持图片格式")
+
+    file_bytes = await file.read()
+    if len(file_bytes) == 0:
+        raise HTTPException(status_code=400, detail="文件为空")
+    if len(file_bytes) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail="图片不能超过 20MB")
+
+    session = await chat_sessions_collection.find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    filename = file.filename or "image.jpg"
+    image_id = await save_image_original(file_bytes, filename, file.content_type, session_id)
+    message = await create_message_record(
+        session_id, "admin", "image", content.strip(),
+        client_message_id, image_id, filename, file.content_type,
+    )
+    return {"message": message}
+
+@app.delete("/api/admin/chat/sessions/{session_id}")
+async def delete_chat_session(session_id: str, token_data: dict = Depends(verify_token)):
+    img_msgs = await chat_messages_collection.find(
+        {"session_id": session_id, "type": "image"}, {"image_id": 1}
+    ).to_list(500)
+    for msg in img_msgs:
+        if msg.get("image_id"):
+            try:
+                await delete_image_by_name(msg["image_id"])
+            except Exception:
+                pass
+
+    await chat_messages_collection.delete_many({"session_id": session_id})
+    result = await chat_sessions_collection.delete_one({"session_id": session_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return {"message": "会话已删除"}

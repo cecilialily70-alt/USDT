@@ -10,6 +10,7 @@ import USDTCalculator from './components/USDTCalculator';
 import Security from './components/Security';
 import Reviews from './components/Reviews';
 import Footer from './components/Footer';
+import ChatWidget from './components/ChatWidget';
 import AdminOrNotFound from './components/AdminOrNotFound';
 import axios from 'axios';
 import './App.css';
@@ -79,6 +80,7 @@ function App() {
             <Route path="*" element={<AdminOrNotFound />} />
           </Routes>
           <Footer />
+          <ChatWidget />
           <Toaster position="top-center" richColors />
         </div>
       </BrowserRouter>
