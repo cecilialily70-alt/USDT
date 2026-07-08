@@ -1,11 +1,13 @@
 import os
 import re
+import ipaddress
 import certifi
 import asyncio
 import hashlib
 import secrets
 import uuid
 import httpx
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -47,7 +49,7 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
-    allow_headers=["Authorization", "Content-Type", "*"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 MONGO_URL = (
@@ -62,6 +64,10 @@ if not JWT_SECRET:
 
 DEFAULT_ADMIN_PATH = "/xiaoyan"
 DEFAULT_ADMIN_PASSWORD = "Qw123456.."
+IS_PRODUCTION = os.environ.get("VERCEL_ENV") == "production" or os.environ.get("ENV") == "production"
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60
+LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 8
+_login_attempts: dict[str, list[float]] = {}
 
 def resolve_admin_path(config: dict) -> str:
     env_path = os.environ.get("ADMIN_PATH", "").strip()
@@ -231,8 +237,49 @@ class AdminChatReply(BaseModel):
     content: str = ""
     client_message_id: str = ""
 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8985091533:AAE72fpF3qP7tZ9Az9JVEQZ2YNuUwE6rIUk")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "8500753537")
+def get_client_ip(request: Request) -> str:
+    raw = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
+    if raw.count(":") == 1 and "." in raw:
+        raw = raw.split(":")[0]
+    if raw.startswith("[") and "]" in raw:
+        raw = raw[1:raw.index("]")]
+    return raw
+
+def require_valid_ip(value: str) -> str:
+    ip = (value or "").strip()
+    try:
+        ipaddress.ip_address(ip)
+    except Exception:
+        raise HTTPException(status_code=400, detail="IP 格式无效")
+    return ip
+
+def is_rate_limited(ip: str) -> bool:
+    now = time.time()
+    starts = _login_attempts.get(ip, [])
+    starts = [ts for ts in starts if now - ts <= LOGIN_RATE_LIMIT_WINDOW_SECONDS]
+    _login_attempts[ip] = starts
+    return len(starts) >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS
+
+def register_login_attempt(ip: str):
+    now = time.time()
+    starts = _login_attempts.get(ip, [])
+    starts = [ts for ts in starts if now - ts <= LOGIN_RATE_LIMIT_WINDOW_SECONDS]
+    starts.append(now)
+    _login_attempts[ip] = starts
+
+def clear_login_attempts(ip: str):
+    _login_attempts.pop(ip, None)
+
+TELEGRAM_BOT_TOKEN = (
+    os.environ.get("TG_BOT")
+    or os.environ.get("TELEGRAM_BOT_TOKEN")
+    or ""
+).strip()
+TELEGRAM_CHAT_ID = (
+    os.environ.get("TG_CHAT_ID")
+    or os.environ.get("TELEGRAM_CHAT_ID")
+    or ""
+).strip()
 
 # ==========================================
 # 优化 1: 智能高可用 IP 拦截中间件 (双重接口 + 故障放行)
@@ -244,7 +291,40 @@ async def ip_block_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
+    def normalize_ip(raw: str) -> str:
+        candidate = (raw or "").strip()
+        # x-forwarded-for 里通常是纯 IP；这里仅处理常见的 IPv4:port 场景
+        if candidate.count(":") == 1 and "." in candidate:
+            candidate = candidate.split(":")[0]
+        if candidate.startswith("[") and "]" in candidate:
+            candidate = candidate[1:candidate.index("]")]
+        try:
+            ipaddress.ip_address(candidate)
+            return candidate
+        except Exception:
+            return ""
+
+    def extract_related_ips() -> list[str]:
+        values = []
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            values.extend([p.strip() for p in forwarded.split(",") if p.strip()])
+        for header in ("x-real-ip", "x-vercel-forwarded-for", "x-client-ip"):
+            hv = request.headers.get(header, "")
+            if hv:
+                values.extend([p.strip() for p in hv.split(",") if p.strip()])
+        if request.client and request.client.host:
+            values.append(request.client.host)
+
+        dedup = []
+        for v in values:
+            ip_val = normalize_ip(v)
+            if ip_val and ip_val not in dedup:
+                dedup.append(ip_val)
+        return dedup
+
+    related_ips = extract_related_ips()
+    ip = related_ips[0] if related_ips else normalize_ip(request.client.host if request.client else "")
     path = request.url.path
     
     if not path.startswith("/api/"):
@@ -255,36 +335,46 @@ async def ip_block_middleware(request: Request, call_next):
     if ip in ["127.0.0.1", "::1", "localhost"]:
         return await call_next(request)
 
-    # 管理后台 API 不受地区限制，管理员可从全球任意地区登录
-    if path.startswith("/api/admin/") or path == "/api/health":
+    # 管理后台 API / 聊天图片资源不受地区限制，避免后台图片加载失败
+    if path.startswith("/api/admin/") or path.startswith("/api/chat/images/") or path == "/api/health":
         return await call_next(request)
 
     # 数据库不可用时直接放行，避免全站 500
     try:
-        whitelist_entry = await whitelist_collection.find_one({"ip": ip})
+        whitelist_entry = await whitelist_collection.find_one({"ip": {"$in": related_ips or [ip]}})
         if whitelist_entry:
             return await call_next(request)
     except Exception:
         return await call_next(request)
 
-    async def auto_whitelist(user_ip: str):
+    async def auto_whitelist_many(candidates: list[str], source: str):
         try:
-            await whitelist_collection.update_one(
-                {"ip": user_ip},
-                {"$setOnInsert": {"ip": user_ip, "added_at": datetime.utcnow().isoformat(), "auto_added": True}},
-                upsert=True
-            )
+            now = datetime.utcnow().isoformat()
+            for user_ip in candidates:
+                if user_ip in ["127.0.0.1", "::1", "localhost"]:
+                    continue
+                await whitelist_collection.update_one(
+                    {"ip": user_ip},
+                    {
+                        "$setOnInsert": {
+                            "ip": user_ip,
+                            "added_at": now,
+                            "auto_added": True,
+                            "source": source,
+                        }
+                    },
+                    upsert=True
+                )
         except Exception:
             pass
         
     # 第二步：优先使用 Vercel 原生请求头 (零延迟、无API限流限制)
     vercel_country = request.headers.get("x-vercel-ip-country")
     if vercel_country:
-        if vercel_country == "IL":
-            await auto_whitelist(ip)
-            return await call_next(request)
-        else:
-            return JSONResponse(status_code=403, content={"detail": "Access Denied: 仅限以色列地区访问。"})
+        if vercel_country == "HK":
+            return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
+        await auto_whitelist_many(related_ips or [ip], "vercel-header")
+        return await call_next(request)
 
     # 第三步：备用方案 A (ip-api.com)
     try:
@@ -293,11 +383,10 @@ async def ip_block_middleware(request: Request, call_next):
             if res1.status_code == 200:
                 data = res1.json()
                 if data.get("status") == "success":
-                    if data.get("countryCode") == "IL":
-                        await auto_whitelist(ip)
-                        return await call_next(request)
-                    else:
-                        return JSONResponse(status_code=403, content={"detail": "Access Denied: 仅限以色列地区访问。"})
+                    if data.get("countryCode") == "HK":
+                        return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
+                    await auto_whitelist_many(related_ips or [ip], "ip-api")
+                    return await call_next(request)
     except Exception:
         pass # 发生错误（超时、封禁等），忽略并尝试备用方案 B
 
@@ -307,17 +396,27 @@ async def ip_block_middleware(request: Request, call_next):
             res2 = await http_client.get(f"https://api.country.is/{ip}", timeout=2.0)
             if res2.status_code == 200:
                 data = res2.json()
-                if data.get("country") == "IL":
-                    await auto_whitelist(ip)
-                    return await call_next(request)
-                else:
-                    return JSONResponse(status_code=403, content={"detail": "Access Denied: 仅限以色列地区访问。"})
+                if data.get("country") == "HK":
+                    return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
+                await auto_whitelist_many(related_ips or [ip], "country-is")
+                return await call_next(request)
     except Exception:
         pass # 备用方案也失败
 
     # 第五步：终极兜底方案 (Fail-Open)
     # 如果所有的外部 API 服务都崩溃或限流了，我们选择不拦截，直接放行，确保你的客户能正常交易！
     return await call_next(request)
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    return response
 
 
 @app.post("/api/admin/check-path")
@@ -330,14 +429,22 @@ async def check_admin_path(data: PathCheckRequest):
     return {"is_admin": normalized_req == normalized_real}
 
 @app.post("/api/admin/login")
-async def admin_login(data: LoginRequest):
+async def admin_login(data: LoginRequest, request: Request):
     await asyncio.sleep(1.5)
+    ip = get_client_ip(request)
+    if is_rate_limited(ip):
+        raise HTTPException(status_code=429, detail="登录尝试过于频繁，请稍后再试")
     config = await get_config_doc()
     real_password = config.get("adminPassword", DEFAULT_ADMIN_PASSWORD)
+
+    if IS_PRODUCTION and real_password == DEFAULT_ADMIN_PASSWORD:
+        raise HTTPException(status_code=503, detail="安全限制：生产环境禁止使用默认后台密码，请先修改 adminPassword")
     
     if data.password != real_password:
+        register_login_attempt(ip)
         raise HTTPException(status_code=401, detail="访问密钥错误 (Invalid Access Key)")
-    
+
+    clear_login_attempts(ip)
     token = jwt.encode({"sub": "admin", "exp": datetime.utcnow() + timedelta(hours=24)}, JWT_SECRET, algorithm="HS256")
     return {"token": token}
 
@@ -406,23 +513,23 @@ async def get_whitelist(token_data: dict = Depends(verify_token)):
 
 @app.post("/api/admin/whitelist")
 async def add_whitelist_ip(data: WhitelistIP, token_data: dict = Depends(verify_token)):
+    valid_ip = require_valid_ip(data.ip)
     await whitelist_collection.update_one(
-        {"ip": data.ip}, 
-        {"$set": {"ip": data.ip, "auto_added": False, "added_at": datetime.utcnow().isoformat()}}, 
+        {"ip": valid_ip}, 
+        {"$set": {"ip": valid_ip, "auto_added": False, "added_at": datetime.utcnow().isoformat(), "source": "manual"}}, 
         upsert=True
     )
     return {"message": "IP 已成功加入白名单"}
 
 @app.delete("/api/admin/whitelist/{ip}")
 async def remove_whitelist_ip(ip: str, token_data: dict = Depends(verify_token)):
-    await whitelist_collection.delete_one({"ip": ip})
+    valid_ip = require_valid_ip(ip)
+    await whitelist_collection.delete_one({"ip": valid_ip})
     return {"message": "IP 已从白名单移除"}
 
 # ==========================================
 # 在线聊天系统 API
 # ==========================================
-def get_client_ip(request: Request) -> str:
-    return request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
 
 def validate_israeli_phone(phone: str) -> str:
     cleaned = re.sub(r"[\s\-()]", "", phone.strip())
@@ -441,6 +548,8 @@ def serialize_message(doc: dict) -> dict:
     return msg
 
 async def send_telegram(text: str):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     async with httpx.AsyncClient() as client:
         try:
@@ -714,6 +823,7 @@ async def upload_visitor_image(
     visitor_phone: str = Form(""),
     client_message_id: str = Form(""),
 ):
+    ensure_mongo_context()
     if not file.content_type or file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="仅支持图片格式 (JPEG/PNG/GIF/WebP/HEIC)")
 
