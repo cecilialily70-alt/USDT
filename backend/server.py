@@ -49,7 +49,12 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "*"],
 )
 
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+MONGO_URL = (
+    os.environ.get("MONGO_URL")
+    or os.environ.get("MONGODB_URI")
+    or "mongodb://localhost:27017"
+).strip().strip('"').strip("'")
+
 JWT_SECRET = os.environ.get("JWT_SECRET")
 if not JWT_SECRET:
     JWT_SECRET = secrets.token_hex(32)
@@ -57,11 +62,25 @@ if not JWT_SECRET:
 DEFAULT_ADMIN_PATH = "/xiaoyan"
 DEFAULT_ADMIN_PASSWORD = "Qw123456.."
 
+def resolve_admin_path(config: dict) -> str:
+    env_path = os.environ.get("ADMIN_PATH", "").strip()
+    return config.get("adminPath") or env_path or DEFAULT_ADMIN_PATH
+
 def create_mongo_client():
-    kwargs = {"serverSelectionTimeoutMS": 8000, "connectTimeoutMS": 8000}
-    if MONGO_URL.startswith("mongodb+srv://") or "mongodb.net" in MONGO_URL:
-        kwargs["tlsCAFile"] = certifi.where()
-    return AsyncIOMotorClient(MONGO_URL, **kwargs)
+    """兼容 Vercel Serverless 的 MongoDB 连接"""
+    common = {
+        "serverSelectionTimeoutMS": 20000,
+        "connectTimeoutMS": 20000,
+        "socketTimeoutMS": 20000,
+        "maxPoolSize": 10,
+        "retryWrites": True,
+    }
+    if MONGO_URL.startswith("mongodb+srv://"):
+        # Atlas SRV 自动启用 TLS；Vercel 上 certifi 路径有时不可用，故做双重回退
+        return AsyncIOMotorClient(MONGO_URL, **common)
+    if "mongodb.net" in MONGO_URL:
+        return AsyncIOMotorClient(MONGO_URL, tlsCAFile=certifi.where(), **common)
+    return AsyncIOMotorClient(MONGO_URL, **common)
 
 mongo_client = create_mongo_client()
 db = mongo_client.exchange_db
@@ -70,6 +89,18 @@ whitelist_collection = db.whitelist
 chat_sessions_collection = db.chat_sessions
 chat_messages_collection = db.chat_messages
 chat_images_fs = AsyncIOMotorGridFSBucket(db, bucket_name="chat_images")
+
+_last_db_error = ""
+
+async def ping_database():
+    global _last_db_error
+    try:
+        await mongo_client.admin.command("ping")
+        _last_db_error = ""
+        return True
+    except Exception as e:
+        _last_db_error = f"{type(e).__name__}: {str(e)[:200]}"
+        return False
 
 _indexes_ready = False
 
@@ -100,8 +131,16 @@ async def ensure_indexes():
     _indexes_ready = True
 
 async def safe_find_one(collection, query, projection=None):
+    if not await ping_database():
+        return None
     await ensure_indexes()
     return await collection.find_one(query, projection or {})
+
+async def get_config_doc():
+    return await safe_db_op(
+        lambda: safe_find_one(config_collection, {}, {"_id": 0}),
+        fallback={},
+    ) or {}
 
 async def safe_db_op(coro_factory, fallback=None):
     try:
@@ -249,17 +288,17 @@ async def ip_block_middleware(request: Request, call_next):
 
 @app.post("/api/admin/check-path")
 async def check_admin_path(data: PathCheckRequest):
-    await asyncio.sleep(0.5) 
-    config = await config_collection.find_one({}, {"_id": 0}) or {}
-    real_path = config.get("adminPath", DEFAULT_ADMIN_PATH)
+    await asyncio.sleep(0.5)
+    config = await get_config_doc()
+    real_path = resolve_admin_path(config)
     normalized_req = "/" + data.path.strip("/")
     normalized_real = "/" + real_path.strip("/")
     return {"is_admin": normalized_req == normalized_real}
 
 @app.post("/api/admin/login")
 async def admin_login(data: LoginRequest):
-    await asyncio.sleep(1.5) 
-    config = await config_collection.find_one({}, {"_id": 0}) or {}
+    await asyncio.sleep(1.5)
+    config = await get_config_doc()
     real_password = config.get("adminPassword", DEFAULT_ADMIN_PASSWORD)
     
     if data.password != real_password:
@@ -270,24 +309,21 @@ async def admin_login(data: LoginRequest):
 
 @app.get("/api/health")
 async def health_check():
-    db_ok = False
-    try:
-        await mongo_client.admin.command("ping")
-        db_ok = True
-    except Exception:
-        pass
+    db_ok = await ping_database()
     return {
         "status": "ok" if db_ok else "degraded",
         "database": "connected" if db_ok else "disconnected",
-        "mongo_configured": bool(os.environ.get("MONGO_URL")),
+        "mongo_configured": bool(os.environ.get("MONGO_URL") or os.environ.get("MONGODB_URI")),
+        "error": _last_db_error if not db_ok else None,
+        "hint": (
+            "请在 MongoDB Atlas → Network Access 添加 0.0.0.0/0 允许 Vercel 访问"
+            if not db_ok else None
+        ),
     }
 
 @app.get("/api/config")
 async def get_public_config():
-    config = await safe_db_op(
-        lambda: safe_find_one(config_collection, {}, {"_id": 0}),
-        fallback={},
-    ) or {}
+    config = await get_config_doc()
     return {
         "buyRate": config.get("buyRate", 4.4),
         "sellRate": config.get("sellRate", 3.3),
@@ -296,12 +332,12 @@ async def get_public_config():
 
 @app.get("/api/admin/config")
 async def get_admin_config(token_data: dict = Depends(verify_token)):
-    config = await config_collection.find_one({}, {"_id": 0}) or {}
+    config = await get_config_doc()
     return AdminConfig(
         buyRate=config.get("buyRate", 4.4),
         sellRate=config.get("sellRate", 3.3),
         whatsappLink=config.get("whatsappLink", "https://wa.me/972552452669"),
-        adminPath=config.get("adminPath", DEFAULT_ADMIN_PATH),
+        adminPath=resolve_admin_path(config),
         adminPassword=config.get("adminPassword", DEFAULT_ADMIN_PASSWORD)
     )
 
