@@ -2,6 +2,7 @@ import os
 import re
 import certifi
 import asyncio
+import hashlib
 import secrets
 import uuid
 import httpx
@@ -57,7 +58,7 @@ MONGO_URL = (
 
 JWT_SECRET = os.environ.get("JWT_SECRET")
 if not JWT_SECRET:
-    JWT_SECRET = secrets.token_hex(32)
+    JWT_SECRET = hashlib.sha256(f"{MONGO_URL}:exchange-admin".encode()).hexdigest()
 
 DEFAULT_ADMIN_PATH = "/xiaoyan"
 DEFAULT_ADMIN_PASSWORD = "Qw123456.."
@@ -533,6 +534,7 @@ async def create_message_record(
     filename: str = "",
     mime_type: str = "",
 ) -> dict:
+    ensure_mongo_context()
     if client_message_id:
         existing = await chat_messages_collection.find_one(
             {"session_id": session_id, "client_message_id": client_message_id},
@@ -576,7 +578,20 @@ async def create_message_record(
     inc_field = "unread_admin" if sender == "visitor" else "unread_visitor"
     await chat_sessions_collection.update_one(
         {"session_id": session_id},
-        {"$set": {"last_message_at": now, "last_message": preview[:100]}, "$inc": {inc_field: 1}},
+        {
+            "$set": {"last_message_at": now, "last_message": preview[:100]},
+            "$inc": {inc_field: 1},
+            "$setOnInsert": {
+                "session_id": session_id,
+                "visitor_name": "访客",
+                "visitor_phone": "",
+                "visitor_ip": "",
+                "created_at": now,
+                "unread_admin": 0,
+                "unread_visitor": 0,
+            },
+        },
+        upsert=True,
     )
     return serialize_message(message)
 
@@ -586,6 +601,7 @@ async def create_or_get_chat_session(
     data: ChatSessionCreate,
     background_tasks: BackgroundTasks,
 ):
+    ensure_mongo_context()
     try:
         session_id = data.session_id.strip()
         if not session_id:
@@ -618,11 +634,24 @@ async def create_or_get_chat_session(
             raise HTTPException(status_code=503, detail="数据库未配置，请在 Vercel 设置 MONGO_URL 环境变量")
         raise HTTPException(status_code=503, detail="数据库连接失败，请稍后重试")
 
+@app.get("/api/chat/sync")
+async def sync_visitor_chat(session_id: str = Query(...)):
+    """访客打开网站时同步未读消息（不重置未读数）"""
+    ensure_mongo_context()
+    session = await chat_sessions_collection.find_one({"session_id": session_id}, {"_id": 0})
+    cursor = chat_messages_collection.find({"session_id": session_id}, {"_id": 0}).sort("created_at", 1)
+    messages = [serialize_message(m) for m in await cursor.to_list(length=2000)]
+    return {
+        "unread_visitor": session.get("unread_visitor", 0) if session else 0,
+        "messages": messages,
+    }
+
 @app.get("/api/chat/messages")
 async def get_visitor_messages(
     session_id: str = Query(...),
     since: str = Query(None),
 ):
+    ensure_mongo_context()
     query = {"session_id": session_id}
     if since:
         query["created_at"] = {"$gt": since}
@@ -643,6 +672,7 @@ async def send_visitor_message(
     data: ChatMessageCreate,
     background_tasks: BackgroundTasks,
 ):
+    ensure_mongo_context()
     content = data.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="消息内容不能为空")
@@ -666,6 +696,8 @@ async def send_visitor_message(
     message = await create_message_record(
         session_id, "visitor", "text", content, data.client_message_id
     )
+    if message.get("client_message_id") is None and data.client_message_id:
+        message["client_message_id"] = data.client_message_id
     background_tasks.add_task(
         notify_new_message, visitor_name, visitor_phone, content, session_id, "text"
     )
@@ -730,6 +762,7 @@ async def serve_chat_image(image_id: str):
 
 @app.get("/api/admin/chat/sessions")
 async def get_chat_sessions(token_data: dict = Depends(verify_token)):
+    ensure_mongo_context()
     cursor = chat_sessions_collection.find({}, {"_id": 0}).sort("last_message_at", -1)
     sessions = await cursor.to_list(length=200)
     return {"sessions": sessions}
@@ -740,6 +773,7 @@ async def get_admin_session_messages(
     since: str = Query(None),
     token_data: dict = Depends(verify_token),
 ):
+    ensure_mongo_context()
     query = {"session_id": session_id}
     if since:
         query["created_at"] = {"$gt": since}
@@ -759,6 +793,7 @@ async def send_admin_reply(
     data: AdminChatReply,
     token_data: dict = Depends(verify_token),
 ):
+    ensure_mongo_context()
     content = data.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="消息内容不能为空")
@@ -770,6 +805,8 @@ async def send_admin_reply(
     message = await create_message_record(
         session_id, "admin", "text", content, data.client_message_id
     )
+    if message.get("client_message_id") is None and data.client_message_id:
+        message["client_message_id"] = data.client_message_id
     return {"message": message}
 
 @app.post("/api/admin/chat/sessions/{session_id}/upload")
@@ -780,6 +817,7 @@ async def upload_admin_image(
     client_message_id: str = Form(""),
     token_data: dict = Depends(verify_token),
 ):
+    ensure_mongo_context()
     if not file.content_type or file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="仅支持图片格式")
 
@@ -799,6 +837,8 @@ async def upload_admin_image(
         session_id, "admin", "image", content.strip(),
         client_message_id, image_id, filename, file.content_type,
     )
+    if message.get("client_message_id") is None and client_message_id:
+        message["client_message_id"] = client_message_id
     return {"message": message}
 
 @app.delete("/api/admin/chat/sessions/{session_id}")

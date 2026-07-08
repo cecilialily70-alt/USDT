@@ -13,6 +13,7 @@ import {
   validateIsraeliPhone,
   createClientMessageId,
   getApiErrorMessage,
+  retryRequest,
 } from '../utils/chatHelpers';
 
 const API = '/api';
@@ -58,17 +59,38 @@ const ChatWidget = () => {
   const applyMessages = useCallback((incoming, isIncremental = false) => {
     setMessages((prev) => {
       const base = isIncremental ? prev : [];
-      const pending = getPendingMessages(sessionId.current);
-      const merged = mergeMessages(mergeMessages(base, incoming), pending);
+      const failedPending = getPendingMessages(sessionId.current).filter(
+        (m) => m.status === 'failed'
+      );
+      const merged = mergeMessages(mergeMessages(base, incoming), failedPending);
       if (merged.length > 0) {
         const last = merged[merged.length - 1];
-        if (last.created_at && !last.status) {
+        if (last.created_at && last.message_id) {
           lastSinceRef.current = last.created_at;
         }
       }
       return merged;
     });
   }, []);
+
+  const syncFromServer = useCallback(async () => {
+    if (needsRegister) return;
+    try {
+      const res = await axios.get(`${API}/chat/sync`, {
+        params: { session_id: sessionId.current },
+      });
+      const serverMsgs = res.data.messages || [];
+      const serverUnread = res.data.unread_visitor || 0;
+
+      applyMessages(serverMsgs, false);
+
+      if (!isOpen) {
+        setUnread(serverUnread);
+      }
+    } catch {
+      // keep local state on network error
+    }
+  }, [needsRegister, isOpen, applyMessages]);
 
   const fetchMessages = useCallback(async (since = null, fullLoad = false) => {
     try {
@@ -146,20 +168,43 @@ const ChatWidget = () => {
   useEffect(() => {
     if (!needsRegister && visitorName && visitorPhone) {
       initSession(visitorName, visitorPhone).catch(() => {});
+      syncFromServer();
       const pending = getPendingMessages(sessionId.current);
       if (pending.length) {
         setMessages((prev) => mergeMessages(prev, pending));
         retryPendingMessages();
       }
     }
-  }, [needsRegister, visitorName, visitorPhone, initSession, retryPendingMessages]);
+  }, [needsRegister, visitorName, visitorPhone, initSession, retryPendingMessages, syncFromServer]);
+
+  useEffect(() => {
+    const handleResume = () => {
+      if (!needsRegister) {
+        syncFromServer();
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleResume();
+      }
+    };
+
+    window.addEventListener('focus', handleResume);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleResume);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [needsRegister, syncFromServer]);
 
   useEffect(() => {
     if (!needsRegister && !isOpen) {
-      const bgPoll = setInterval(() => fetchMessages(lastSinceRef.current), POLL_INTERVAL);
+      const bgPoll = setInterval(syncFromServer, POLL_INTERVAL);
       return () => clearInterval(bgPoll);
     }
-  }, [needsRegister, isOpen, fetchMessages]);
+  }, [needsRegister, isOpen, syncFromServer]);
 
   useEffect(() => {
     if (isOpen && !needsRegister) {
@@ -231,12 +276,14 @@ const ChatWidget = () => {
         client_message_id: clientMessageId,
       });
       removePendingMessage(sessionId.current, clientMessageId);
-      setMessages((prev) =>
-        mergeMessages(
-          prev.filter((m) => m.client_message_id !== clientMessageId),
-          [res.data.message]
-        )
-      );
+      const serverMsg = {
+        ...res.data.message,
+        client_message_id: res.data.message.client_message_id || clientMessageId,
+      };
+      setMessages((prev) => mergeMessages(prev, [serverMsg]));
+      if (serverMsg.created_at) {
+        lastSinceRef.current = serverMsg.created_at;
+      }
     } catch {
       savePendingMessage(sessionId.current, { ...optimistic, status: 'failed' });
       setMessages((prev) =>
@@ -334,8 +381,7 @@ const ChatWidget = () => {
   };
 
   const toggleOpen = () => {
-    setIsOpen((o) => !o);
-    if (!isOpen) setUnread(0);
+    setIsOpen((open) => !open);
   };
 
   return (

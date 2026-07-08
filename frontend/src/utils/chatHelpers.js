@@ -1,31 +1,41 @@
 const PENDING_KEY = 'chat_pending_messages';
 
 export const mergeMessages = (prev, incoming) => {
-  const byId = new Map();
-  const byClientId = new Map();
+  const map = new Map();
 
-  const add = (msg) => {
-    if (msg.message_id) byId.set(msg.message_id, msg);
-    if (msg.client_message_id) byClientId.set(msg.client_message_id, msg);
-  };
+  const upsert = (msg) => {
+    if (!msg) return;
 
-  prev.forEach(add);
-  incoming.forEach((msg) => {
-    if (msg.client_message_id && byClientId.has(msg.client_message_id)) {
-      const pending = byClientId.get(msg.client_message_id);
-      if (pending.status === 'pending' || pending.status === 'failed') {
-        byClientId.delete(msg.client_message_id);
-        if (pending.message_id) byId.delete(pending.message_id);
+    const clientId = msg.client_message_id;
+    const serverId = msg.message_id;
+
+    if (serverId && clientId) {
+      map.delete(clientId);
+      map.set(serverId, { ...msg, status: undefined });
+      return;
+    }
+
+    if (serverId) {
+      const existing = map.get(serverId);
+      if (!existing || existing.status === 'pending') {
+        map.set(serverId, { ...msg, status: undefined });
+      }
+      return;
+    }
+
+    if (clientId) {
+      const confirmed = [...map.values()].some(
+        (m) => m.client_message_id === clientId && m.message_id
+      );
+      if (!confirmed) {
+        map.set(clientId, msg);
       }
     }
-    add(msg);
-  });
+  };
 
-  const merged = new Map();
-  byClientId.forEach((v) => merged.set(v.client_message_id, v));
-  byId.forEach((v) => merged.set(v.message_id || v.client_message_id, v));
+  [...prev, ...incoming].forEach(upsert);
 
-  return Array.from(merged.values()).sort((a, b) =>
+  return Array.from(map.values()).sort((a, b) =>
     a.created_at.localeCompare(b.created_at)
   );
 };
@@ -83,4 +93,25 @@ export const getApiErrorMessage = (err, fallback = 'Request failed') => {
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) return detail.map((d) => d.msg || d).join(', ');
   return fallback;
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const retryRequest = async (fn, retries = 3, baseDelay = 400) => {
+  let lastError;
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const status = error?.response?.status;
+      if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+        throw error;
+      }
+      if (attempt < retries - 1) {
+        await sleep(baseDelay * (attempt + 1));
+      }
+    }
+  }
+  throw lastError;
 };

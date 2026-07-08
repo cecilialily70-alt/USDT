@@ -7,7 +7,7 @@ import ChatMessageBubble from './ChatMessageBubble';
 import { MessageSquare, Send, Trash2, RefreshCw, ImagePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
-import { mergeMessages, createClientMessageId, formatChatTime } from '../utils/chatHelpers';
+import { mergeMessages, createClientMessageId, formatChatTime, retryRequest, getApiErrorMessage } from '../utils/chatHelpers';
 
 const API = '/api';
 const POLL_INTERVAL = 2500;
@@ -35,6 +35,7 @@ const AdminChat = () => {
       setSessions(res.data.sessions || []);
     } catch (e) {
       if (e.response?.status === 401) return;
+      console.error('Failed to fetch chat sessions', e);
     }
   }, []);
 
@@ -102,25 +103,29 @@ const AdminChat = () => {
     setMessages((prev) => mergeMessages(prev, [optimistic]));
 
     try {
-      const res = await axios.post(
-        `${API}/admin/chat/sessions/${selectedSession.session_id}/messages`,
-        { content, client_message_id: clientMessageId },
-        { headers: { Authorization: `Bearer ${getToken()}` } }
-      );
-      setMessages((prev) =>
-        mergeMessages(
-          prev.filter((m) => m.client_message_id !== clientMessageId),
-          [res.data.message]
+      const res = await retryRequest(() =>
+        axios.post(
+          `${API}/admin/chat/sessions/${selectedSession.session_id}/messages`,
+          { content, client_message_id: clientMessageId },
+          { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 15000 }
         )
       );
+      const serverMsg = {
+        ...res.data.message,
+        client_message_id: res.data.message.client_message_id || clientMessageId,
+      };
+      setMessages((prev) => mergeMessages(prev, [serverMsg]));
+      if (serverMsg.created_at) {
+        lastSinceRef.current = serverMsg.created_at;
+      }
       fetchSessions();
-    } catch {
+    } catch (err) {
       setMessages((prev) =>
         prev.map((m) =>
           m.client_message_id === clientMessageId ? { ...m, status: 'failed' } : m
         )
       );
-      throw new Error('send failed');
+      throw err;
     }
   };
 
@@ -133,9 +138,9 @@ const AdminChat = () => {
     const clientId = createClientMessageId();
     try {
       await sendTextReply(content, clientId);
-    } catch {
+    } catch (err) {
       setReply(content);
-      toast.error('Failed to send reply');
+      toast.error(getApiErrorMessage(err, '发送失败，请重试'));
     } finally {
       setSending(false);
     }
@@ -173,29 +178,33 @@ const AdminChat = () => {
       form.append('file', file, file.name);
       form.append('client_message_id', clientId);
 
-      const res = await axios.post(
-        `${API}/admin/chat/sessions/${selectedSession.session_id}/upload`,
-        form,
-        {
-          headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'multipart/form-data' },
-          timeout: 120000,
-        }
-      );
-      URL.revokeObjectURL(previewUrl);
-      setMessages((prev) =>
-        mergeMessages(
-          prev.filter((m) => m.client_message_id !== clientId),
-          [res.data.message]
+      const res = await retryRequest(() =>
+        axios.post(
+          `${API}/admin/chat/sessions/${selectedSession.session_id}/upload`,
+          form,
+          {
+            headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'multipart/form-data' },
+            timeout: 120000,
+          }
         )
       );
+      URL.revokeObjectURL(previewUrl);
+      const serverMsg = {
+        ...res.data.message,
+        client_message_id: res.data.message.client_message_id || clientId,
+      };
+      setMessages((prev) => mergeMessages(prev, [serverMsg]));
+      if (serverMsg.created_at) {
+        lastSinceRef.current = serverMsg.created_at;
+      }
       fetchSessions();
-    } catch {
+    } catch (err) {
       setMessages((prev) =>
         prev.map((m) =>
           m.client_message_id === clientId ? { ...m, status: 'failed' } : m
         )
       );
-      toast.error('Failed to upload image');
+      toast.error(getApiErrorMessage(err, '图片发送失败，请重试'));
     } finally {
       setUploading(false);
     }
