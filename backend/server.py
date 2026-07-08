@@ -91,9 +91,11 @@ chat_messages_collection = db.chat_messages
 chat_images_fs = AsyncIOMotorGridFSBucket(db, bucket_name="chat_images")
 
 _last_db_error = ""
+_mongo_loop_id = None
 
 async def ping_database():
     global _last_db_error
+    ensure_mongo_context()
     try:
         await mongo_client.admin.command("ping")
         _last_db_error = ""
@@ -104,8 +106,36 @@ async def ping_database():
 
 _indexes_ready = False
 
+def ensure_mongo_context():
+    """
+    Vercel Serverless 可能在不同事件循环中复用模块级对象。
+    Motor 客户端绑定旧 loop 后会出现 RuntimeError（如 Task cb...）。
+    """
+    global mongo_client, db, config_collection, whitelist_collection
+    global chat_sessions_collection, chat_messages_collection, chat_images_fs
+    global _mongo_loop_id, _indexes_ready
+
+    try:
+        loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        loop_id = None
+
+    if _mongo_loop_id == loop_id:
+        return
+
+    mongo_client = create_mongo_client()
+    db = mongo_client.exchange_db
+    config_collection = db.config
+    whitelist_collection = db.whitelist
+    chat_sessions_collection = db.chat_sessions
+    chat_messages_collection = db.chat_messages
+    chat_images_fs = AsyncIOMotorGridFSBucket(db, bucket_name="chat_images")
+    _mongo_loop_id = loop_id
+    _indexes_ready = False
+
 async def ensure_indexes():
     global _indexes_ready
+    ensure_mongo_context()
     if _indexes_ready:
         return
     specs = [
@@ -131,6 +161,7 @@ async def ensure_indexes():
     _indexes_ready = True
 
 async def safe_find_one(collection, query, projection=None):
+    ensure_mongo_context()
     if not await ping_database():
         return None
     await ensure_indexes()
@@ -217,6 +248,8 @@ async def ip_block_middleware(request: Request, call_next):
     
     if not path.startswith("/api/"):
         return await call_next(request)
+
+    ensure_mongo_context()
 
     if ip in ["127.0.0.1", "::1", "localhost"]:
         return await call_next(request)
