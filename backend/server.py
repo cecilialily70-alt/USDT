@@ -5,6 +5,10 @@ import asyncio
 import secrets
 import uuid
 import httpx
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -20,28 +24,11 @@ from contextlib import asynccontextmanager
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    index_specs = [
-        (whitelist_collection, "ip", {"unique": True}),
-        (chat_sessions_collection, "session_id", {"unique": True}),
-        (chat_sessions_collection, [("last_message_at", -1)], {}),
-        (chat_messages_collection, [("session_id", 1), ("created_at", 1)], {}),
-        (chat_messages_collection, "message_id", {"unique": True}),
-    ]
-    for collection, keys, opts in index_specs:
-        try:
-            await collection.create_index(keys, **opts)
-        except Exception:
-            pass
     try:
-        await chat_messages_collection.create_index(
-            [("session_id", 1), ("client_message_id", 1)],
-            unique=True,
-            partialFilterExpression={"client_message_id": {"$exists": True, "$type": "string"}},
-        )
+        await ensure_indexes()
     except Exception:
         pass
     yield
-    # 关闭时的清理操作可以写在这里
 
 app = FastAPI(lifespan=lifespan)
 
@@ -70,13 +57,57 @@ if not JWT_SECRET:
 DEFAULT_ADMIN_PATH = "/xiaoyan"
 DEFAULT_ADMIN_PASSWORD = "Qw123456.."
 
-client = AsyncIOMotorClient(MONGO_URL, tlsCAFile=certifi.where())
-db = client.exchange_db
+def create_mongo_client():
+    kwargs = {"serverSelectionTimeoutMS": 8000, "connectTimeoutMS": 8000}
+    if MONGO_URL.startswith("mongodb+srv://") or "mongodb.net" in MONGO_URL:
+        kwargs["tlsCAFile"] = certifi.where()
+    return AsyncIOMotorClient(MONGO_URL, **kwargs)
+
+mongo_client = create_mongo_client()
+db = mongo_client.exchange_db
 config_collection = db.config
 whitelist_collection = db.whitelist
 chat_sessions_collection = db.chat_sessions
 chat_messages_collection = db.chat_messages
 chat_images_fs = AsyncIOMotorGridFSBucket(db, bucket_name="chat_images")
+
+_indexes_ready = False
+
+async def ensure_indexes():
+    global _indexes_ready
+    if _indexes_ready:
+        return
+    specs = [
+        (whitelist_collection, "ip", {"unique": True}),
+        (chat_sessions_collection, "session_id", {"unique": True}),
+        (chat_sessions_collection, [("last_message_at", -1)], {}),
+        (chat_messages_collection, [("session_id", 1), ("created_at", 1)], {}),
+        (chat_messages_collection, "message_id", {"unique": True}),
+    ]
+    for collection, keys, opts in specs:
+        try:
+            await collection.create_index(keys, **opts)
+        except Exception:
+            pass
+    try:
+        await chat_messages_collection.create_index(
+            [("session_id", 1), ("client_message_id", 1)],
+            unique=True,
+            partialFilterExpression={"client_message_id": {"$exists": True, "$type": "string"}},
+        )
+    except Exception:
+        pass
+    _indexes_ready = True
+
+async def safe_find_one(collection, query, projection=None):
+    await ensure_indexes()
+    return await collection.find_one(query, projection or {})
+
+async def safe_db_op(coro_factory, fallback=None):
+    try:
+        return await coro_factory()
+    except Exception:
+        return fallback
 
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB 原图不压缩
 ALLOWED_IMAGE_TYPES = {
@@ -152,21 +183,26 @@ async def ip_block_middleware(request: Request, call_next):
         return await call_next(request)
 
     # 管理后台 API 不受地区限制，管理员可从全球任意地区登录
-    if path.startswith("/api/admin/"):
-        return await call_next(request)
-        
-    # 第一步：查数据库白名单 (此时已有唯一索引，查询极快)
-    whitelist_entry = await whitelist_collection.find_one({"ip": ip})
-    if whitelist_entry:
+    if path.startswith("/api/admin/") or path == "/api/health":
         return await call_next(request)
 
-    # 将写入白名单的操作封装，使用 update_one + upsert 防止高并发下唯一索引报错
+    # 数据库不可用时直接放行，避免全站 500
+    try:
+        whitelist_entry = await whitelist_collection.find_one({"ip": ip})
+        if whitelist_entry:
+            return await call_next(request)
+    except Exception:
+        return await call_next(request)
+
     async def auto_whitelist(user_ip: str):
-        await whitelist_collection.update_one(
-            {"ip": user_ip},
-            {"$setOnInsert": {"ip": user_ip, "added_at": datetime.utcnow().isoformat(), "auto_added": True}},
-            upsert=True
-        )
+        try:
+            await whitelist_collection.update_one(
+                {"ip": user_ip},
+                {"$setOnInsert": {"ip": user_ip, "added_at": datetime.utcnow().isoformat(), "auto_added": True}},
+                upsert=True
+            )
+        except Exception:
+            pass
         
     # 第二步：优先使用 Vercel 原生请求头 (零延迟、无API限流限制)
     vercel_country = request.headers.get("x-vercel-ip-country")
@@ -179,8 +215,8 @@ async def ip_block_middleware(request: Request, call_next):
 
     # 第三步：备用方案 A (ip-api.com)
     try:
-        async with httpx.AsyncClient() as client:
-            res1 = await client.get(f"http://ip-api.com/json/{ip}", timeout=2.0)
+        async with httpx.AsyncClient() as http_client:
+            res1 = await http_client.get(f"http://ip-api.com/json/{ip}", timeout=2.0)
             if res1.status_code == 200:
                 data = res1.json()
                 if data.get("status") == "success":
@@ -194,8 +230,8 @@ async def ip_block_middleware(request: Request, call_next):
 
     # 第四步：备用方案 B (api.country.is - 另一个稳定的免费IP库)
     try:
-        async with httpx.AsyncClient() as client:
-            res2 = await client.get(f"https://api.country.is/{ip}", timeout=2.0)
+        async with httpx.AsyncClient() as http_client:
+            res2 = await http_client.get(f"https://api.country.is/{ip}", timeout=2.0)
             if res2.status_code == 200:
                 data = res2.json()
                 if data.get("country") == "IL":
@@ -232,9 +268,26 @@ async def admin_login(data: LoginRequest):
     token = jwt.encode({"sub": "admin", "exp": datetime.utcnow() + timedelta(hours=24)}, JWT_SECRET, algorithm="HS256")
     return {"token": token}
 
+@app.get("/api/health")
+async def health_check():
+    db_ok = False
+    try:
+        await mongo_client.admin.command("ping")
+        db_ok = True
+    except Exception:
+        pass
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "database": "connected" if db_ok else "disconnected",
+        "mongo_configured": bool(os.environ.get("MONGO_URL")),
+    }
+
 @app.get("/api/config")
 async def get_public_config():
-    config = await config_collection.find_one({}, {"_id": 0}) or {}
+    config = await safe_db_op(
+        lambda: safe_find_one(config_collection, {}, {"_id": 0}),
+        fallback={},
+    ) or {}
     return {
         "buyRate": config.get("buyRate", 4.4),
         "sellRate": config.get("sellRate", 3.3),
@@ -491,8 +544,10 @@ async def create_or_get_chat_session(
         }
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=500, detail="服务器错误，请稍后重试")
+    except Exception as e:
+        if not os.environ.get("MONGO_URL"):
+            raise HTTPException(status_code=503, detail="数据库未配置，请在 Vercel 设置 MONGO_URL 环境变量")
+        raise HTTPException(status_code=503, detail="数据库连接失败，请稍后重试")
 
 @app.get("/api/chat/messages")
 async def get_visitor_messages(
