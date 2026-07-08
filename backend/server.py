@@ -68,6 +68,13 @@ IS_PRODUCTION = os.environ.get("VERCEL_ENV") == "production" or os.environ.get("
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60
 LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 8
 _login_attempts: dict[str, list[float]] = {}
+COUNTRY_CACHE_TTL_SECONDS = 30 * 60
+_country_cache: dict[str, tuple[str, float]] = {}
+CHAT_RETENTION_HOURS = 72
+CHAT_RETENTION_SECONDS = CHAT_RETENTION_HOURS * 60 * 60
+CLEANUP_INTERVAL_SECONDS = 10 * 60
+_last_cleanup_run_at = 0.0
+_cleanup_lock = asyncio.Lock()
 
 def resolve_admin_path(config: dict) -> str:
     env_path = os.environ.get("ADMIN_PATH", "").strip()
@@ -150,6 +157,7 @@ async def ensure_indexes():
         (chat_sessions_collection, "session_id", {"unique": True}),
         (chat_sessions_collection, [("last_message_at", -1)], {}),
         (chat_messages_collection, [("session_id", 1), ("created_at", 1)], {}),
+        (chat_messages_collection, "created_at_dt", {"expireAfterSeconds": CHAT_RETENTION_SECONDS}),
         (chat_messages_collection, "message_id", {"unique": True}),
     ]
     for collection, keys, opts in specs:
@@ -270,6 +278,58 @@ def register_login_attempt(ip: str):
 def clear_login_attempts(ip: str):
     _login_attempts.pop(ip, None)
 
+async def cleanup_expired_chat_data():
+    ensure_mongo_context()
+    cutoff_dt = datetime.utcnow() - timedelta(hours=CHAT_RETENTION_HOURS)
+    cutoff_iso = cutoff_dt.isoformat()
+
+    # 先清理过期图片文件，避免消息已删后拿不到 image_id 造成残留
+    old_img_msgs = await chat_messages_collection.find(
+        {"type": "image", "created_at_dt": {"$lt": cutoff_dt}},
+        {"image_id": 1}
+    ).to_list(length=5000)
+    image_ids = []
+    for msg in old_img_msgs:
+        image_id = msg.get("image_id")
+        if image_id and image_id not in image_ids:
+            image_ids.append(image_id)
+    for image_id in image_ids:
+        try:
+            await delete_image_by_name(image_id)
+        except Exception:
+            pass
+
+    await chat_messages_collection.delete_many({"created_at_dt": {"$lt": cutoff_dt}})
+
+    stale_sessions = await chat_sessions_collection.find(
+        {"last_message_at": {"$lt": cutoff_iso}},
+        {"session_id": 1}
+    ).to_list(length=2000)
+    for s in stale_sessions:
+        sid = s.get("session_id")
+        if not sid:
+            continue
+        has_recent = await chat_messages_collection.count_documents({"session_id": sid}, limit=1)
+        if has_recent == 0:
+            await chat_sessions_collection.delete_one({"session_id": sid})
+
+async def maybe_cleanup_expired_chat_data():
+    global _last_cleanup_run_at
+    now = time.time()
+    if now - _last_cleanup_run_at < CLEANUP_INTERVAL_SECONDS:
+        return
+    if _cleanup_lock.locked():
+        return
+    async with _cleanup_lock:
+        now2 = time.time()
+        if now2 - _last_cleanup_run_at < CLEANUP_INTERVAL_SECONDS:
+            return
+        try:
+            await cleanup_expired_chat_data()
+        except Exception:
+            pass
+        _last_cleanup_run_at = time.time()
+
 TELEGRAM_BOT_TOKEN = (
     os.environ.get("TG_BOT")
     or os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -332,6 +392,10 @@ async def ip_block_middleware(request: Request, call_next):
 
     ensure_mongo_context()
 
+    if not ip:
+        # 无法识别来源 IP 时快速放行，避免阻塞正常业务
+        return await call_next(request)
+
     if ip in ["127.0.0.1", "::1", "localhost"]:
         return await call_next(request)
 
@@ -367,13 +431,36 @@ async def ip_block_middleware(request: Request, call_next):
                 )
         except Exception:
             pass
+
+    def get_cached_country(ip_value: str) -> str:
+        cached = _country_cache.get(ip_value)
+        if not cached:
+            return ""
+        country_code, expires_at = cached
+        if time.time() > expires_at:
+            _country_cache.pop(ip_value, None)
+            return ""
+        return country_code
+
+    def set_cached_country(ip_value: str, country_code: str):
+        if not ip_value or not country_code:
+            return
+        _country_cache[ip_value] = (country_code, time.time() + COUNTRY_CACHE_TTL_SECONDS)
         
     # 第二步：优先使用 Vercel 原生请求头 (零延迟、无API限流限制)
     vercel_country = request.headers.get("x-vercel-ip-country")
     if vercel_country:
+        set_cached_country(ip, vercel_country)
         if vercel_country == "HK":
             return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
         await auto_whitelist_many(related_ips or [ip], "vercel-header")
+        return await call_next(request)
+
+    cached_country = get_cached_country(ip)
+    if cached_country:
+        if cached_country == "HK":
+            return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
+        await auto_whitelist_many(related_ips or [ip], "country-cache")
         return await call_next(request)
 
     # 第三步：备用方案 A (ip-api.com)
@@ -383,7 +470,10 @@ async def ip_block_middleware(request: Request, call_next):
             if res1.status_code == 200:
                 data = res1.json()
                 if data.get("status") == "success":
-                    if data.get("countryCode") == "HK":
+                    country = data.get("countryCode")
+                    if country:
+                        set_cached_country(ip, country)
+                    if country == "HK":
                         return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
                     await auto_whitelist_many(related_ips or [ip], "ip-api")
                     return await call_next(request)
@@ -396,7 +486,10 @@ async def ip_block_middleware(request: Request, call_next):
             res2 = await http_client.get(f"https://api.country.is/{ip}", timeout=2.0)
             if res2.status_code == 200:
                 data = res2.json()
-                if data.get("country") == "HK":
+                country = data.get("country")
+                if country:
+                    set_cached_country(ip, country)
+                if country == "HK":
                     return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
                 await auto_whitelist_many(related_ips or [ip], "country-is")
                 return await call_next(request)
@@ -409,6 +502,7 @@ async def ip_block_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
+    await maybe_cleanup_expired_chat_data()
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -542,7 +636,7 @@ def validate_israeli_phone(phone: str) -> str:
     return cleaned
 
 def serialize_message(doc: dict) -> dict:
-    msg = {k: v for k, v in doc.items() if k != "_id"}
+    msg = {k: v for k, v in doc.items() if k not in {"_id", "created_at_dt"}}
     if msg.get("image_id"):
         msg["image_url"] = f"/api/chat/images/{msg['image_id']}"
     return msg
@@ -603,6 +697,7 @@ async def ensure_session(session_id: str, visitor_name: str, visitor_phone: str,
     return session, is_new
 
 async def save_image_original(file_bytes: bytes, filename: str, mime_type: str, session_id: str) -> str:
+    ensure_mongo_context()
     image_id = str(uuid.uuid4())
     await chat_images_fs.upload_from_stream(
         image_id,
@@ -613,22 +708,31 @@ async def save_image_original(file_bytes: bytes, filename: str, mime_type: str, 
             "mime_type": mime_type,
             "size": len(file_bytes),
             "uploaded_at": datetime.utcnow().isoformat(),
+            "uploaded_at_dt": datetime.utcnow(),
         },
     )
     return image_id
 
 async def delete_image_by_name(image_id: str):
+    ensure_mongo_context()
     files = await chat_images_fs.find({"filename": image_id}).to_list(1)
     if files:
         await chat_images_fs.delete(files[0]._id)
 
 async def get_image_by_id(image_id: str):
+    ensure_mongo_context()
     try:
         stream = await chat_images_fs.open_download_stream_by_name(image_id)
         data = await stream.read()
+        stream_meta = getattr(stream, "metadata", {}) or {}
         meta = await chat_images_fs.find({"filename": image_id}).to_list(1)
-        mime = meta[0].metadata.get("mime_type", "application/octet-stream") if meta else "application/octet-stream"
-        filename = meta[0].metadata.get("filename", "image") if meta else "image"
+        file_meta = meta[0].metadata if meta else {}
+        mime = (
+            stream_meta.get("mime_type")
+            or file_meta.get("mime_type")
+            or "image/jpeg"
+        )
+        filename = file_meta.get("filename") or stream_meta.get("filename") or "image"
         return data, mime, filename
     except Exception:
         return None, None, None
@@ -665,6 +769,7 @@ async def create_message_record(
         "type": msg_type,
         "content": content,
         "created_at": now,
+        "created_at_dt": datetime.utcnow(),
     }
     if client_message_id:
         message["client_message_id"] = client_message_id
@@ -861,6 +966,7 @@ async def upload_visitor_image(
 
 @app.get("/api/chat/images/{image_id}")
 async def serve_chat_image(image_id: str):
+    ensure_mongo_context()
     data, mime, filename = await get_image_by_id(image_id)
     if not data:
         raise HTTPException(status_code=404, detail="图片不存在")
