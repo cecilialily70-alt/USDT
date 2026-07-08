@@ -21,6 +21,14 @@ const SESSION_KEY = 'chat_session_id';
 const NAME_KEY = 'chat_visitor_name';
 const PHONE_KEY = 'chat_visitor_phone';
 const POLL_INTERVAL = 2500;
+const SUPPORTED_IMAGE_MIME = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+]);
 
 const getOrCreateSessionId = () => {
   let id = localStorage.getItem(SESSION_KEY);
@@ -315,7 +323,12 @@ const ChatWidget = () => {
     if (!file || uploading) return;
     e.target.value = '';
 
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
     if (!file.type.startsWith('image/')) return;
+    if (ext === 'heic' || ext === 'heif' || !SUPPORTED_IMAGE_MIME.has(file.type)) {
+      setPhoneError('仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持');
+      return;
+    }
     if (file.size > 20 * 1024 * 1024) {
       setPhoneError(t.chat.imageTooLarge);
       return;
@@ -360,13 +373,14 @@ const ChatWidget = () => {
           [res.data.message]
         )
       );
-    } catch {
+    } catch (err) {
       savePendingMessage(sessionId.current, { ...optimistic, status: 'failed' });
       setMessages((prev) =>
         prev.map((m) =>
           m.client_message_id === clientId ? { ...m, status: 'failed' } : m
         )
       );
+      setPhoneError(getApiErrorMessage(err, '图片发送失败，请重试'));
     } finally {
       setUploading(false);
     }

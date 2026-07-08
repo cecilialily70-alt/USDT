@@ -197,7 +197,7 @@ async def safe_db_op(coro_factory, fallback=None):
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB 原图不压缩
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg", "image/jpg", "image/png", "image/gif",
-    "image/webp", "image/heic", "image/heif", "image/bmp",
+    "image/webp", "image/bmp",
 }
 
 security = HTTPBearer()
@@ -930,7 +930,7 @@ async def upload_visitor_image(
 ):
     ensure_mongo_context()
     if not file.content_type or file.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="仅支持图片格式 (JPEG/PNG/GIF/WebP/HEIC)")
+        raise HTTPException(status_code=400, detail="仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持")
 
     file_bytes = await file.read()
     if len(file_bytes) == 0:
@@ -1035,7 +1035,7 @@ async def upload_admin_image(
 ):
     ensure_mongo_context()
     if not file.content_type or file.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="仅支持图片格式")
+        raise HTTPException(status_code=400, detail="仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持")
 
     file_bytes = await file.read()
     if len(file_bytes) == 0:

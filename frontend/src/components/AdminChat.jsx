@@ -11,6 +11,14 @@ import { mergeMessages, createClientMessageId, formatChatTime, retryRequest, get
 
 const API = '/api';
 const POLL_INTERVAL = 2500;
+const SUPPORTED_IMAGE_MIME = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+]);
 
 const AdminChat = () => {
   const [sessions, setSessions] = useState([]);
@@ -151,7 +159,12 @@ const AdminChat = () => {
     if (!file || !selectedSession || uploading) return;
     e.target.value = '';
 
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
     if (!file.type.startsWith('image/')) return;
+    if (ext === 'heic' || ext === 'heif' || !SUPPORTED_IMAGE_MIME.has(file.type)) {
+      toast.error('仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持');
+      return;
+    }
     if (file.size > 20 * 1024 * 1024) {
       toast.error('Image must be under 20MB');
       return;

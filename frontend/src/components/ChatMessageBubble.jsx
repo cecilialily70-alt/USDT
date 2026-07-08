@@ -36,7 +36,17 @@ const ChatMessageBubble = ({ msg, isOwn }) => {
                 />
               </a>
             ) : (
-              <p className="text-xs opacity-60">Image failed to load</p>
+              <div className="text-xs opacity-70 space-y-1">
+                <p>Image failed to load</p>
+                <a
+                  href={msg.image_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  Open image link
+                </a>
+              </div>
             )}
           </div>
         )}
