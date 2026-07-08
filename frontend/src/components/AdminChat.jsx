@@ -8,17 +8,14 @@ import { MessageSquare, Send, Trash2, RefreshCw, ImagePlus } from 'lucide-react'
 import { toast } from 'sonner';
 import axios from 'axios';
 import { mergeMessages, createClientMessageId, formatChatTime, retryRequest, getApiErrorMessage } from '../utils/chatHelpers';
+import {
+  MAX_IMAGE_SIZE_BYTES,
+  SUPPORTED_IMAGE_MIME,
+  UNSUPPORTED_IMAGE_MESSAGE,
+} from '../utils/chatConstants';
 
 const API = '/api';
 const POLL_INTERVAL = 2500;
-const SUPPORTED_IMAGE_MIME = new Set([
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/bmp',
-]);
 
 const AdminChat = () => {
   const [sessions, setSessions] = useState([]);
@@ -162,10 +159,10 @@ const AdminChat = () => {
     const ext = (file.name.split('.').pop() || '').toLowerCase();
     if (!file.type.startsWith('image/')) return;
     if (ext === 'heic' || ext === 'heif' || !SUPPORTED_IMAGE_MIME.has(file.type)) {
-      toast.error('仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持');
+      toast.error(UNSUPPORTED_IMAGE_MESSAGE);
       return;
     }
-    if (file.size > 20 * 1024 * 1024) {
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
       toast.error('Image must be under 20MB');
       return;
     }

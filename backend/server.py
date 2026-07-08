@@ -4,7 +4,6 @@ import ipaddress
 import certifi
 import asyncio
 import hashlib
-import secrets
 import uuid
 import httpx
 import time
@@ -199,6 +198,7 @@ ALLOWED_IMAGE_TYPES = {
     "image/jpeg", "image/jpg", "image/png", "image/gif",
     "image/webp", "image/bmp",
 }
+IMAGE_TYPE_ERROR_DETAIL = "仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持"
 
 security = HTTPBearer()
 
@@ -245,13 +245,39 @@ class AdminChatReply(BaseModel):
     content: str = ""
     client_message_id: str = ""
 
+def normalize_ip(raw: str) -> str:
+    candidate = (raw or "").strip()
+    if candidate.count(":") == 1 and "." in candidate:
+        candidate = candidate.split(":")[0]
+    if candidate.startswith("[") and "]" in candidate:
+        candidate = candidate[1:candidate.index("]")]
+    try:
+        ipaddress.ip_address(candidate)
+        return candidate
+    except Exception:
+        return ""
+
+def extract_related_ips(request: Request) -> list[str]:
+    values = []
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        values.extend([p.strip() for p in forwarded.split(",") if p.strip()])
+    for header in ("x-real-ip", "x-vercel-forwarded-for", "x-client-ip"):
+        hv = request.headers.get(header, "")
+        if hv:
+            values.extend([p.strip() for p in hv.split(",") if p.strip()])
+    if request.client and request.client.host:
+        values.append(request.client.host)
+
+    dedup = []
+    for v in values:
+        ip_val = normalize_ip(v)
+        if ip_val and ip_val not in dedup:
+            dedup.append(ip_val)
+    return dedup
+
 def get_client_ip(request: Request) -> str:
-    raw = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
-    if raw.count(":") == 1 and "." in raw:
-        raw = raw.split(":")[0]
-    if raw.startswith("[") and "]" in raw:
-        raw = raw[1:raw.index("]")]
-    return raw
+    return normalize_ip(request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip())
 
 def require_valid_ip(value: str) -> str:
     ip = (value or "").strip()
@@ -277,6 +303,114 @@ def register_login_attempt(ip: str):
 
 def clear_login_attempts(ip: str):
     _login_attempts.pop(ip, None)
+
+ACCESS_DENIED_HK_DETAIL = "Access Denied: 香港地区已被拦截。"
+
+def get_cached_country(ip_value: str) -> str:
+    cached = _country_cache.get(ip_value)
+    if not cached:
+        return ""
+    country_code, expires_at = cached
+    if time.time() > expires_at:
+        _country_cache.pop(ip_value, None)
+        return ""
+    return country_code
+
+def set_cached_country(ip_value: str, country_code: str):
+    if not ip_value or not country_code:
+        return
+    _country_cache[ip_value] = (country_code, time.time() + COUNTRY_CACHE_TTL_SECONDS)
+
+async def auto_whitelist_many(candidates: list[str], source: str):
+    """
+    将候选 IP 写入 Mongo 白名单（仅 auto_added）。
+    注意：调用方通常已确保 ensure_mongo_context()。
+    """
+    try:
+        ensure_mongo_context()
+        now = datetime.utcnow().isoformat()
+        for user_ip in candidates:
+            if user_ip in ["127.0.0.1", "::1", "localhost"]:
+                continue
+            await whitelist_collection.update_one(
+                {"ip": user_ip},
+                {
+                    "$setOnInsert": {
+                        "ip": user_ip,
+                        "added_at": now,
+                        "auto_added": True,
+                        "source": source,
+                    }
+                },
+                upsert=True,
+            )
+    except Exception:
+        # 安全策略失败要 fail-open，避免误伤用户
+        pass
+
+async def apply_country_policy_and_maybe_block(
+    request: Request,
+    ip: str,
+    related_ips: list[str],
+):
+    """
+    仅拦截香港：如果为 HK 则返回 JSONResponse，否则写入 auto 白名单并返回 None。
+    最终失败兜底：fail-open（返回 None）。
+    """
+    candidates = related_ips or [ip]
+
+    # 1) Vercel header 最高优先级
+    vercel_country = request.headers.get("x-vercel-ip-country")
+    if vercel_country:
+        set_cached_country(ip, vercel_country)
+        if vercel_country == "HK":
+            return JSONResponse(status_code=403, content={"detail": ACCESS_DENIED_HK_DETAIL})
+        await auto_whitelist_many(candidates, "vercel-header")
+        return None
+
+    # 2) 命中缓存
+    cached_country = get_cached_country(ip)
+    if cached_country:
+        if cached_country == "HK":
+            return JSONResponse(status_code=403, content={"detail": ACCESS_DENIED_HK_DETAIL})
+        await auto_whitelist_many(candidates, "country-cache")
+        return None
+
+    # 3) 外部 IP 库 A
+    try:
+        async with httpx.AsyncClient() as http_client:
+            res1 = await http_client.get(f"http://ip-api.com/json/{ip}", timeout=2.0)
+            if res1.status_code == 200:
+                data = res1.json()
+                if data.get("status") == "success":
+                    country = data.get("countryCode")
+                    if country:
+                        set_cached_country(ip, country)
+                    if country == "HK":
+                        return JSONResponse(status_code=403, content={"detail": ACCESS_DENIED_HK_DETAIL})
+                    await auto_whitelist_many(candidates, "ip-api")
+                    return None
+    except Exception:
+        pass
+
+    # 4) 外部 IP 库 B
+    try:
+        async with httpx.AsyncClient() as http_client:
+            res2 = await http_client.get(f"https://api.country.is/{ip}", timeout=2.0)
+            if res2.status_code == 200:
+                data = res2.json()
+                country = data.get("country")
+                if country:
+                    set_cached_country(ip, country)
+                if country == "HK":
+                    return JSONResponse(status_code=403, content={"detail": ACCESS_DENIED_HK_DETAIL})
+                await auto_whitelist_many(candidates, "country-is")
+                return None
+    except Exception:
+        pass
+
+    # 5) fail-open
+    return None
 
 async def cleanup_expired_chat_data():
     ensure_mongo_context()
@@ -330,6 +464,16 @@ async def maybe_cleanup_expired_chat_data():
             pass
         _last_cleanup_run_at = time.time()
 
+async def read_and_validate_image(file: UploadFile) -> bytes:
+    if not file.content_type or file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail=IMAGE_TYPE_ERROR_DETAIL)
+    file_bytes = await file.read()
+    if len(file_bytes) == 0:
+        raise HTTPException(status_code=400, detail="文件为空")
+    if len(file_bytes) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail="图片不能超过 20MB")
+    return file_bytes
+
 TELEGRAM_BOT_TOKEN = (
     os.environ.get("TG_BOT")
     or os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -351,39 +495,7 @@ async def ip_block_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    def normalize_ip(raw: str) -> str:
-        candidate = (raw or "").strip()
-        # x-forwarded-for 里通常是纯 IP；这里仅处理常见的 IPv4:port 场景
-        if candidate.count(":") == 1 and "." in candidate:
-            candidate = candidate.split(":")[0]
-        if candidate.startswith("[") and "]" in candidate:
-            candidate = candidate[1:candidate.index("]")]
-        try:
-            ipaddress.ip_address(candidate)
-            return candidate
-        except Exception:
-            return ""
-
-    def extract_related_ips() -> list[str]:
-        values = []
-        forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded:
-            values.extend([p.strip() for p in forwarded.split(",") if p.strip()])
-        for header in ("x-real-ip", "x-vercel-forwarded-for", "x-client-ip"):
-            hv = request.headers.get(header, "")
-            if hv:
-                values.extend([p.strip() for p in hv.split(",") if p.strip()])
-        if request.client and request.client.host:
-            values.append(request.client.host)
-
-        dedup = []
-        for v in values:
-            ip_val = normalize_ip(v)
-            if ip_val and ip_val not in dedup:
-                dedup.append(ip_val)
-        return dedup
-
-    related_ips = extract_related_ips()
+    related_ips = extract_related_ips(request)
     ip = related_ips[0] if related_ips else normalize_ip(request.client.host if request.client else "")
     path = request.url.path
     
@@ -411,93 +523,9 @@ async def ip_block_middleware(request: Request, call_next):
     except Exception:
         return await call_next(request)
 
-    async def auto_whitelist_many(candidates: list[str], source: str):
-        try:
-            now = datetime.utcnow().isoformat()
-            for user_ip in candidates:
-                if user_ip in ["127.0.0.1", "::1", "localhost"]:
-                    continue
-                await whitelist_collection.update_one(
-                    {"ip": user_ip},
-                    {
-                        "$setOnInsert": {
-                            "ip": user_ip,
-                            "added_at": now,
-                            "auto_added": True,
-                            "source": source,
-                        }
-                    },
-                    upsert=True
-                )
-        except Exception:
-            pass
-
-    def get_cached_country(ip_value: str) -> str:
-        cached = _country_cache.get(ip_value)
-        if not cached:
-            return ""
-        country_code, expires_at = cached
-        if time.time() > expires_at:
-            _country_cache.pop(ip_value, None)
-            return ""
-        return country_code
-
-    def set_cached_country(ip_value: str, country_code: str):
-        if not ip_value or not country_code:
-            return
-        _country_cache[ip_value] = (country_code, time.time() + COUNTRY_CACHE_TTL_SECONDS)
-        
-    # 第二步：优先使用 Vercel 原生请求头 (零延迟、无API限流限制)
-    vercel_country = request.headers.get("x-vercel-ip-country")
-    if vercel_country:
-        set_cached_country(ip, vercel_country)
-        if vercel_country == "HK":
-            return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
-        await auto_whitelist_many(related_ips or [ip], "vercel-header")
-        return await call_next(request)
-
-    cached_country = get_cached_country(ip)
-    if cached_country:
-        if cached_country == "HK":
-            return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
-        await auto_whitelist_many(related_ips or [ip], "country-cache")
-        return await call_next(request)
-
-    # 第三步：备用方案 A (ip-api.com)
-    try:
-        async with httpx.AsyncClient() as http_client:
-            res1 = await http_client.get(f"http://ip-api.com/json/{ip}", timeout=2.0)
-            if res1.status_code == 200:
-                data = res1.json()
-                if data.get("status") == "success":
-                    country = data.get("countryCode")
-                    if country:
-                        set_cached_country(ip, country)
-                    if country == "HK":
-                        return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
-                    await auto_whitelist_many(related_ips or [ip], "ip-api")
-                    return await call_next(request)
-    except Exception:
-        pass # 发生错误（超时、封禁等），忽略并尝试备用方案 B
-
-    # 第四步：备用方案 B (api.country.is - 另一个稳定的免费IP库)
-    try:
-        async with httpx.AsyncClient() as http_client:
-            res2 = await http_client.get(f"https://api.country.is/{ip}", timeout=2.0)
-            if res2.status_code == 200:
-                data = res2.json()
-                country = data.get("country")
-                if country:
-                    set_cached_country(ip, country)
-                if country == "HK":
-                    return JSONResponse(status_code=403, content={"detail": "Access Denied: 香港地区已被拦截。"})
-                await auto_whitelist_many(related_ips or [ip], "country-is")
-                return await call_next(request)
-    except Exception:
-        pass # 备用方案也失败
-
-    # 第五步：终极兜底方案 (Fail-Open)
-    # 如果所有的外部 API 服务都崩溃或限流了，我们选择不拦截，直接放行，确保你的客户能正常交易！
+    blocked_response = await apply_country_policy_and_maybe_block(request, ip, related_ips)
+    if blocked_response is not None:
+        return blocked_response
     return await call_next(request)
 
 @app.middleware("http")
@@ -715,18 +743,24 @@ async def save_image_original(file_bytes: bytes, filename: str, mime_type: str, 
 
 async def delete_image_by_name(image_id: str):
     ensure_mongo_context()
-    files = await chat_images_fs.find({"filename": image_id}).to_list(1)
+    files = await chat_images_fs.find({"filename": image_id}).to_list(100)
     if files:
-        await chat_images_fs.delete(files[0]._id)
+        for f in files:
+            await chat_images_fs.delete(f._id)
 
 async def get_image_by_id(image_id: str):
     ensure_mongo_context()
     try:
-        stream = await chat_images_fs.open_download_stream_by_name(image_id)
+        file_doc = await db["chat_images.files"].find_one(
+            {"filename": image_id},
+            sort=[("uploadDate", -1)],
+        )
+        if not file_doc:
+            return None, None, None
+        stream = await chat_images_fs.open_download_stream(file_doc["_id"])
         data = await stream.read()
         stream_meta = getattr(stream, "metadata", {}) or {}
-        meta = await chat_images_fs.find({"filename": image_id}).to_list(1)
-        file_meta = meta[0].metadata if meta else {}
+        file_meta = file_doc.get("metadata") or {}
         mime = (
             stream_meta.get("mime_type")
             or file_meta.get("mime_type")
@@ -808,6 +842,55 @@ async def create_message_record(
         upsert=True,
     )
     return serialize_message(message)
+
+async def create_image_message_record(
+    session_id: str,
+    sender: str,
+    content: str,
+    client_message_id: str,
+    file_bytes: bytes,
+    filename: str,
+    mime_type: str,
+) -> dict:
+    """
+    保存图片到 GridFS，并创建一条类型为 image 的消息记录。
+    统一处理 admin/visitor 两端的 client_message_id 兜底。
+    """
+    ensure_mongo_context()
+    image_id = await save_image_original(file_bytes, filename, mime_type, session_id)
+    message = await create_message_record(
+        session_id,
+        sender,
+        "image",
+        content,
+        client_message_id,
+        image_id,
+        filename,
+        mime_type,
+    )
+    if message.get("client_message_id") is None and client_message_id:
+        message["client_message_id"] = client_message_id
+    return message
+
+async def create_text_message_record(
+    session_id: str,
+    sender: str,
+    content: str,
+    client_message_id: str,
+) -> dict:
+    """
+    创建类型为 text 的消息记录，并做 client_message_id 兜底。
+    """
+    message = await create_message_record(
+        session_id=session_id,
+        sender=sender,
+        msg_type="text",
+        content=content,
+        client_message_id=client_message_id,
+    )
+    if message.get("client_message_id") is None and client_message_id:
+        message["client_message_id"] = client_message_id
+    return message
 
 @app.post("/api/chat/session")
 async def create_or_get_chat_session(
@@ -907,11 +990,12 @@ async def send_visitor_message(
         visitor_name = visitor_name or session.get("visitor_name", "")
         visitor_phone = visitor_phone or session.get("visitor_phone", "")
 
-    message = await create_message_record(
-        session_id, "visitor", "text", content, data.client_message_id
+    message = await create_text_message_record(
+        session_id=session_id,
+        sender="visitor",
+        content=content,
+        client_message_id=data.client_message_id,
     )
-    if message.get("client_message_id") is None and data.client_message_id:
-        message["client_message_id"] = data.client_message_id
     background_tasks.add_task(
         notify_new_message, visitor_name, visitor_phone, content, session_id, "text"
     )
@@ -929,14 +1013,7 @@ async def upload_visitor_image(
     client_message_id: str = Form(""),
 ):
     ensure_mongo_context()
-    if not file.content_type or file.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持")
-
-    file_bytes = await file.read()
-    if len(file_bytes) == 0:
-        raise HTTPException(status_code=400, detail="文件为空")
-    if len(file_bytes) > MAX_IMAGE_SIZE:
-        raise HTTPException(status_code=400, detail="图片不能超过 20MB")
+    file_bytes = await read_and_validate_image(file)
 
     session_id = session_id.strip()
     ip = get_client_ip(request)
@@ -953,11 +1030,14 @@ async def upload_visitor_image(
         vphone = vphone or session.get("visitor_phone", "")
 
     filename = file.filename or "image.jpg"
-    image_id = await save_image_original(file_bytes, filename, file.content_type, session_id)
-
-    message = await create_message_record(
-        session_id, "visitor", "image", content.strip(),
-        client_message_id, image_id, filename, file.content_type,
+    message = await create_image_message_record(
+        session_id=session_id,
+        sender="visitor",
+        content=content.strip(),
+        client_message_id=client_message_id,
+        file_bytes=file_bytes,
+        filename=filename,
+        mime_type=file.content_type,
     )
     background_tasks.add_task(
         notify_new_message, vname, vphone, f"[图片] {filename}", session_id, "image"
@@ -1018,11 +1098,12 @@ async def send_admin_reply(
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    message = await create_message_record(
-        session_id, "admin", "text", content, data.client_message_id
+    message = await create_text_message_record(
+        session_id=session_id,
+        sender="admin",
+        content=content,
+        client_message_id=data.client_message_id,
     )
-    if message.get("client_message_id") is None and data.client_message_id:
-        message["client_message_id"] = data.client_message_id
     return {"message": message}
 
 @app.post("/api/admin/chat/sessions/{session_id}/upload")
@@ -1034,27 +1115,22 @@ async def upload_admin_image(
     token_data: dict = Depends(verify_token),
 ):
     ensure_mongo_context()
-    if not file.content_type or file.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持")
-
-    file_bytes = await file.read()
-    if len(file_bytes) == 0:
-        raise HTTPException(status_code=400, detail="文件为空")
-    if len(file_bytes) > MAX_IMAGE_SIZE:
-        raise HTTPException(status_code=400, detail="图片不能超过 20MB")
+    file_bytes = await read_and_validate_image(file)
 
     session = await chat_sessions_collection.find_one({"session_id": session_id})
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
 
     filename = file.filename or "image.jpg"
-    image_id = await save_image_original(file_bytes, filename, file.content_type, session_id)
-    message = await create_message_record(
-        session_id, "admin", "image", content.strip(),
-        client_message_id, image_id, filename, file.content_type,
+    message = await create_image_message_record(
+        session_id=session_id,
+        sender="admin",
+        content=content.strip(),
+        client_message_id=client_message_id,
+        file_bytes=file_bytes,
+        filename=filename,
+        mime_type=file.content_type,
     )
-    if message.get("client_message_id") is None and client_message_id:
-        message["client_message_id"] = client_message_id
     return {"message": message}
 
 @app.delete("/api/admin/chat/sessions/{session_id}")

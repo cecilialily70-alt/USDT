@@ -13,22 +13,18 @@ import {
   validateIsraeliPhone,
   createClientMessageId,
   getApiErrorMessage,
-  retryRequest,
 } from '../utils/chatHelpers';
+import {
+  MAX_IMAGE_SIZE_BYTES,
+  SUPPORTED_IMAGE_MIME,
+  UNSUPPORTED_IMAGE_MESSAGE,
+} from '../utils/chatConstants';
 
 const API = '/api';
 const SESSION_KEY = 'chat_session_id';
 const NAME_KEY = 'chat_visitor_name';
 const PHONE_KEY = 'chat_visitor_phone';
 const POLL_INTERVAL = 2500;
-const SUPPORTED_IMAGE_MIME = new Set([
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/bmp',
-]);
 
 const getOrCreateSessionId = () => {
   let id = localStorage.getItem(SESSION_KEY);
@@ -326,10 +322,10 @@ const ChatWidget = () => {
     const ext = (file.name.split('.').pop() || '').toLowerCase();
     if (!file.type.startsWith('image/')) return;
     if (ext === 'heic' || ext === 'heif' || !SUPPORTED_IMAGE_MIME.has(file.type)) {
-      setPhoneError('仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持');
+      setPhoneError(UNSUPPORTED_IMAGE_MESSAGE);
       return;
     }
-    if (file.size > 20 * 1024 * 1024) {
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
       setPhoneError(t.chat.imageTooLarge);
       return;
     }
