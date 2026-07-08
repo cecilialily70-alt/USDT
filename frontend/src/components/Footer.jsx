@@ -42,13 +42,11 @@ const Footer = () => {
               </div>
               <span className="gradient-text font-bold text-xl">Exchange</span>
             </div>
-            <p className="text-gray-400">
-              A premium Israeli USDT to ILS exchange platform offering highly competitive exchange rates.
-            </p>
+          <p className="text-gray-400">{t.footer.description}</p>
           </div>
 
           <div>
-            <h3 className="text-white font-semibold mb-4">Quick Links</h3>
+          <h3 className="text-white font-semibold mb-4">{t.footer.quickLinksTitle}</h3>
             <div className="flex flex-col gap-2">
               <a href="#home" className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.navbar.home}
@@ -66,7 +64,7 @@ const Footer = () => {
           </div>
 
           <div>
-            <h3 className="text-white font-semibold mb-4">Legal</h3>
+          <h3 className="text-white font-semibold mb-4">{t.footer.legalTitle}</h3>
             <div className="flex flex-col gap-2">
               <a href="#" className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.footer.terms}

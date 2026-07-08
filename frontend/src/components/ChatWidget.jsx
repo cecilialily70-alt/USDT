@@ -398,7 +398,7 @@ const ChatWidget = () => {
     <>
       {isOpen && (
         <div
-          className="fixed bottom-20 start-4 z-50 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[560px] flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-gradient-to-b from-[#0F1419] to-[#06080F]"
+          className="fixed inset-0 z-50 w-full h-full sm:inset-auto sm:bottom-20 sm:start-4 sm:w-[calc(100vw-2rem)] sm:h-auto sm:max-h-[560px] flex flex-col rounded-none sm:rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-gradient-to-b from-[#0F1419] to-[#06080F]"
           dir={isRTL ? 'rtl' : 'ltr'}
         >
           <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600/80 to-purple-600/80 border-b border-white/10">
@@ -446,7 +446,7 @@ const ChatWidget = () => {
             </div>
           ) : (
             <>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[300px] max-h-[400px] scrollbar-thin">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 max-h-none sm:min-h-[300px] sm:max-h-[400px] scrollbar-thin">
                 {messages.length === 0 && (
                   <p className="text-gray-500 text-sm text-center py-8">{t.chat.empty}</p>
                 )}
@@ -502,7 +502,7 @@ const ChatWidget = () => {
 
       <button
         onClick={toggleOpen}
-        className="fixed bottom-4 start-4 md:bottom-8 md:start-8 z-50 w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-2xl hover:shadow-purple-500/40 transition-all duration-300 hover:scale-110 flex items-center justify-center"
+        className="fixed top-20 right-4 md:top-24 md:right-8 z-50 w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-2xl hover:shadow-purple-500/40 transition-all duration-300 hover:scale-110 flex items-center justify-center"
       >
         {isOpen ? (
           <X className="w-5 h-5 md:w-6 md:h-6 text-white" />

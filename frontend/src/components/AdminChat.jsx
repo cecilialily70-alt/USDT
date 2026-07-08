@@ -26,6 +26,8 @@ const AdminChat = () => {
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const forceScrollToBottomRef = useRef(false);
   const lastSinceRef = useRef(null);
   const fileInputRef = useRef(null);
   const pollRef = useRef(null);
@@ -87,13 +89,22 @@ const AdminChat = () => {
   }, [selectedSession, fetchMessages]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesContainerRef.current;
+    if (!el || !messagesEndRef.current) return;
+
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (forceScrollToBottomRef.current || nearBottom) {
+      // 用户不在底部时不要强制滚动，避免“乱动”
+      messagesEndRef.current.scrollIntoView({ behavior: forceScrollToBottomRef.current ? 'auto' : 'smooth' });
+      forceScrollToBottomRef.current = false;
+    }
   }, [messages]);
 
   const handleSelectSession = (session) => {
     setSelectedSession(session);
     setMessages([]);
     lastSinceRef.current = null;
+    forceScrollToBottomRef.current = true;
   };
 
   const toggleBlacklistByIp = async (ip, blacklisted) => {
@@ -408,7 +419,7 @@ const AdminChat = () => {
                 <p className="text-gray-500 text-xs">{selectedSession.visitor_ip}</p>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3" ref={messagesContainerRef}>
                 {messages.map((msg) => (
                   <ChatMessageBubble
                     key={msg.message_id || msg.client_message_id}

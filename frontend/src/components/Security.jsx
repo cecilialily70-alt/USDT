@@ -35,7 +35,7 @@ const Security = () => {
         <div className="text-center mb-16">
           <Badge className="mb-6 bg-[#26A17B]/20 text-[#26A17B] border border-[#26A17B]/30 hover:bg-[#26A17B]/30 text-sm px-4 py-2">
             <Shield className="w-4 h-4 me-2" />
-            BingX Verified
+            {t.security.badge || 'Verified & Compliance Ready'}
           </Badge>
           <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
             {t.security.title}

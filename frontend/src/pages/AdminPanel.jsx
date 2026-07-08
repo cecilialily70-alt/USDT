@@ -185,7 +185,11 @@ const AdminPanel = () => {
             Back to Home
           </Button>
           <h1 className="text-3xl md:text-5xl font-bold gradient-text mb-3">Admin Panel</h1>
-          <p className="text-gray-400 text-base md:text-lg">Manage exchange rates, security settings, and whitelists</p>
+          <p className="text-gray-400 text-base md:text-lg">Manage exchange rates, security settings, and IP access controls</p>
+        </div>
+
+        <div className="mb-6">
+          <AdminChat />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -300,13 +304,11 @@ const AdminPanel = () => {
           </Card>
         </div>
 
-        <AdminChat />
-
         <Card className="glass-card p-6 md:p-8 border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 shadow-xl shadow-purple-500/10 mb-12">
             <div className="mb-6">
               <Label htmlFor="whatsappLink" className="text-gray-200 text-base md:text-lg font-semibold mb-2 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
-                WhatsApp Contact Links (随机客服分配)
+                WhatsApp Contact Links (Auto-assigned)
               </Label>
               <textarea
                 id="whatsappLink"
