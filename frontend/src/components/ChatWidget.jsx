@@ -483,12 +483,12 @@ const ChatWidget = () => {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder={t.chat.inputPlaceholder}
-                  disabled={sending || uploading}
+                  disabled={sending}
                   className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"
                 />
                 <Button
                   onClick={handleSend}
-                  disabled={!input.trim() || sending || uploading}
+                  disabled={!input.trim() || sending}
                   size="icon"
                   className="h-10 w-10 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shrink-0"
                 >

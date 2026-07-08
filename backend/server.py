@@ -99,6 +99,7 @@ mongo_client = create_mongo_client()
 db = mongo_client.exchange_db
 config_collection = db.config
 whitelist_collection = db.whitelist
+blacklist_collection = db.blacklist
 chat_sessions_collection = db.chat_sessions
 chat_messages_collection = db.chat_messages
 chat_images_fs = AsyncIOMotorGridFSBucket(db, bucket_name="chat_images")
@@ -124,7 +125,7 @@ def ensure_mongo_context():
     Vercel Serverless 可能在不同事件循环中复用模块级对象。
     Motor 客户端绑定旧 loop 后会出现 RuntimeError（如 Task cb...）。
     """
-    global mongo_client, db, config_collection, whitelist_collection
+    global mongo_client, db, config_collection, whitelist_collection, blacklist_collection
     global chat_sessions_collection, chat_messages_collection, chat_images_fs
     global _mongo_loop_id, _indexes_ready
 
@@ -140,6 +141,7 @@ def ensure_mongo_context():
     db = mongo_client.exchange_db
     config_collection = db.config
     whitelist_collection = db.whitelist
+    blacklist_collection = db.blacklist
     chat_sessions_collection = db.chat_sessions
     chat_messages_collection = db.chat_messages
     chat_images_fs = AsyncIOMotorGridFSBucket(db, bucket_name="chat_images")
@@ -153,6 +155,7 @@ async def ensure_indexes():
         return
     specs = [
         (whitelist_collection, "ip", {"unique": True}),
+        (blacklist_collection, "ip", {"unique": True}),
         (chat_sessions_collection, "session_id", {"unique": True}),
         (chat_sessions_collection, [("last_message_at", -1)], {}),
         (chat_messages_collection, [("session_id", 1), ("created_at", 1)], {}),
@@ -227,6 +230,9 @@ class PathCheckRequest(BaseModel):
     path: str
 
 class WhitelistIP(BaseModel):
+    ip: str
+
+class BlacklistIP(BaseModel):
     ip: str
 
 class ChatMessageCreate(BaseModel):
@@ -376,6 +382,15 @@ async def apply_country_policy_and_maybe_block(
         await auto_whitelist_many(candidates, "country-cache")
         return None
 
+    # 上传/发送写操作：避免外部 IP 查询拖慢请求（这里宁可 fail-open）
+    path = request.url.path
+    is_chat_write = (
+        path in {"/api/chat/upload", "/api/chat/messages"} or
+        (path.startswith("/api/admin/chat/sessions/") and (path.endswith("/upload") or path.endswith("/messages")))
+    )
+    if is_chat_write:
+        return None
+
     # 3) 外部 IP 库 A
     try:
         async with httpx.AsyncClient() as http_client:
@@ -511,8 +526,23 @@ async def ip_block_middleware(request: Request, call_next):
     if ip in ["127.0.0.1", "::1", "localhost"]:
         return await call_next(request)
 
-    # 管理后台 API / 聊天图片资源不受地区限制，避免后台图片加载失败
-    if path.startswith("/api/admin/") or path.startswith("/api/chat/images/") or path == "/api/health":
+    # 聊天系统对用户体验来说必须稳定：
+    # 1) 不做地区限制（不调用外部 IP 地理库）
+    # 2) 仅检查黑名单（后台可拉黑刷屏用户）
+    if path.startswith("/api/admin/") or path == "/api/health":
+        return await call_next(request)
+
+    if path.startswith("/api/chat/"):
+        try:
+            blocked = await blacklist_collection.find_one(
+                {"ip": {"$in": related_ips or [ip]}},
+                {"_id": 0},
+            )
+            if blocked:
+                return JSONResponse(status_code=403, content={"detail": "你已被拉黑，无法继续聊天。"})
+        except Exception:
+            # 黑名单查询失败时 fail-open，避免误伤
+            pass
         return await call_next(request)
 
     # 数据库不可用时直接放行，避免全站 500
@@ -648,6 +678,31 @@ async def remove_whitelist_ip(ip: str, token_data: dict = Depends(verify_token))
     valid_ip = require_valid_ip(ip)
     await whitelist_collection.delete_one({"ip": valid_ip})
     return {"message": "IP 已从白名单移除"}
+
+# ==========================================
+# 黑名单管理 API (供后台页面调用)
+# ==========================================
+@app.get("/api/admin/blacklist")
+async def get_blacklist(token_data: dict = Depends(verify_token)):
+    cursor = blacklist_collection.find({}, {"_id": 0}).sort("added_at", -1)
+    ips = await cursor.to_list(length=1000)
+    return {"blacklist": ips}
+
+@app.post("/api/admin/blacklist")
+async def add_blacklist_ip(data: BlacklistIP, token_data: dict = Depends(verify_token)):
+    valid_ip = require_valid_ip(data.ip)
+    await blacklist_collection.update_one(
+        {"ip": valid_ip},
+        {"$set": {"ip": valid_ip, "added_at": datetime.utcnow().isoformat(), "source": "manual"}},
+        upsert=True,
+    )
+    return {"message": "IP 已成功加入黑名单"}
+
+@app.delete("/api/admin/blacklist/{ip}")
+async def remove_blacklist_ip(ip: str, token_data: dict = Depends(verify_token)):
+    valid_ip = require_valid_ip(ip)
+    await blacklist_collection.delete_one({"ip": valid_ip})
+    return {"message": "IP 已从黑名单移除"}
 
 # ==========================================
 # 在线聊天系统 API
@@ -1061,6 +1116,18 @@ async def get_chat_sessions(token_data: dict = Depends(verify_token)):
     ensure_mongo_context()
     cursor = chat_sessions_collection.find({}, {"_id": 0}).sort("last_message_at", -1)
     sessions = await cursor.to_list(length=200)
+    visitor_ips = [s.get("visitor_ip") for s in sessions if s.get("visitor_ip")]
+    blacklist_set = set()
+    if visitor_ips:
+        cursor_bl = blacklist_collection.find(
+            {"ip": {"$in": visitor_ips}},
+            {"_id": 0},
+        )
+        bl_items = await cursor_bl.to_list(length=1000)
+        blacklist_set = {b.get("ip") for b in bl_items if b.get("ip")}
+
+    for s in sessions:
+        s["blacklisted"] = bool(s.get("visitor_ip") in blacklist_set)
     return {"sessions": sessions}
 
 @app.get("/api/admin/chat/sessions/{session_id}/messages")

@@ -4,7 +4,7 @@ import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Card } from './ui/card';
 import ChatMessageBubble from './ChatMessageBubble';
-import { MessageSquare, Send, Trash2, RefreshCw, ImagePlus } from 'lucide-react';
+import { MessageSquare, Send, Trash2, RefreshCw, ImagePlus, Ban } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { mergeMessages, createClientMessageId, formatChatTime, retryRequest, getApiErrorMessage } from '../utils/chatHelpers';
@@ -29,6 +29,7 @@ const AdminChat = () => {
   const lastSinceRef = useRef(null);
   const fileInputRef = useRef(null);
   const pollRef = useRef(null);
+  const [blacklistIpInput, setBlacklistIpInput] = useState('');
 
   const getToken = () => localStorage.getItem('admin_token');
 
@@ -93,6 +94,51 @@ const AdminChat = () => {
     setSelectedSession(session);
     setMessages([]);
     lastSinceRef.current = null;
+  };
+
+  const toggleBlacklistByIp = async (ip, blacklisted) => {
+    if (!ip) {
+      toast.error('该会话缺少 visitor_ip，无法拉黑');
+      return;
+    }
+    try {
+      if (blacklisted) {
+        await retryRequest(() =>
+          axios.delete(`${API}/admin/blacklist/${encodeURIComponent(ip)}`, {
+            headers: { Authorization: `Bearer ${getToken()}` },
+            timeout: 15000,
+          })
+        );
+      } else {
+        await retryRequest(() =>
+          axios.post(
+            `${API}/admin/blacklist`,
+            { ip },
+            { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 15000 }
+          )
+        );
+      }
+      fetchSessions();
+      setSelectedSession((prev) => {
+        if (!prev) return prev;
+        if (prev.visitor_ip !== ip) return prev;
+        return { ...prev, blacklisted: !blacklisted };
+      });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, '操作失败，请重试'));
+    }
+  };
+
+  const handleBlacklistForSession = async (session, e) => {
+    e?.stopPropagation?.();
+    await toggleBlacklistByIp(session?.visitor_ip, session?.blacklisted);
+  };
+
+  const handleAddBlacklistManually = async () => {
+    const ip = blacklistIpInput.trim();
+    if (!ip) return;
+    await toggleBlacklistByIp(ip, false);
+    setBlacklistIpInput('');
   };
 
   const sendTextReply = async (content, clientMessageId) => {
@@ -264,6 +310,25 @@ const AdminChat = () => {
 
       <div className="flex flex-col md:flex-row h-[500px]">
         <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 overflow-y-auto max-h-[200px] md:max-h-none">
+          <div className="p-3 border-b border-white/10 bg-black/20">
+            <p className="text-white/80 text-xs mb-2">拉黑 IP / 手动加入</p>
+            <div className="flex gap-2 items-center">
+              <Input
+                value={blacklistIpInput}
+                onChange={(e) => setBlacklistIpInput(e.target.value)}
+                placeholder="输入 IP (IPv4/IPv6)"
+                className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-xs h-9"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleAddBlacklistManually}
+                className="h-9 w-9 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+              >
+                <Ban className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
           {sessions.length === 0 ? (
             <p className="text-gray-500 text-center py-8 text-sm">No conversations yet</p>
           ) : (
@@ -287,6 +352,11 @@ const AdminChat = () => {
                         </Badge>
                       )}
                     </div>
+                    {(session.blacklisted) && (
+                      <Badge className="bg-red-600/80 text-white border-none text-[10px] px-1.5 py-0 mr-1">
+                        Blocked
+                      </Badge>
+                    )}
                     {session.visitor_phone && (
                       <p className="text-blue-400/80 text-xs font-mono mt-0.5" dir="ltr">
                         {session.visitor_phone}
@@ -306,6 +376,20 @@ const AdminChat = () => {
                     onClick={(e) => handleDeleteSession(session.session_id, e)}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={
+                      session.blacklisted
+                        ? 'text-amber-300/80 hover:text-amber-200 hover:bg-amber-500/10 shrink-0 ml-2'
+                        : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10 shrink-0 ml-2'
+                    }
+                    onClick={(e) => handleBlacklistForSession(session, e)}
+                    title={session.blacklisted ? '解除拉黑' : '拉黑该 IP'}
+                  >
+                    <Ban className="w-3.5 h-3.5" />
                   </Button>
                 </div>
               </button>
@@ -358,12 +442,12 @@ const AdminChat = () => {
                   onChange={(e) => setReply(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendReply())}
                   placeholder="Type your reply..."
-                  disabled={sending || uploading}
+                  disabled={sending}
                   className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"
                 />
                 <Button
                   onClick={handleSendReply}
-                  disabled={!reply.trim() || sending || uploading}
+                  disabled={!reply.trim() || sending}
                   size="icon"
                   className="h-10 w-10 bg-green-600 hover:bg-green-700 shrink-0"
                 >
