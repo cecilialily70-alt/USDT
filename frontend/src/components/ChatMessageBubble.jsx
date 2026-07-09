@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { formatChatTime, resolveChatImageUrl } from '../utils/chatHelpers';
 import { Loader2, AlertCircle, ImageIcon } from 'lucide-react';
+import ChatImageViewer from './ChatImageViewer';
 
 const ChatMessageBubble = ({ msg, isOwn }) => {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const isPending = msg.status === 'pending';
   const isFailed = msg.status === 'failed';
 
@@ -31,53 +33,66 @@ const ChatMessageBubble = ({ msg, isOwn }) => {
   const cls = isOwn ? ownClass : otherClass;
 
   return (
-    <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm relative ${cls} ${isPending ? 'opacity-70' : ''} ${isFailed ? 'border border-red-500/50' : ''}`}>
-        {msg.type === 'image' && imageSrc && (
-          <div className="mb-1">
-            {!imgLoaded && !imgError && (
-              <div className="w-48 h-32 bg-black/20 rounded-lg flex items-center justify-center">
-                <ImageIcon className="w-8 h-8 opacity-40" />
-              </div>
-            )}
-            {!imgError ? (
-              <a href={imageSrc} target="_blank" rel="noopener noreferrer">
-                <img
-                  src={imageSrc}
-                  alt={msg.filename || 'image'}
-                  className={`max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity ${imgLoaded ? '' : 'hidden'}`}
-                  style={{ maxHeight: '300px' }}
-                  loading="eager"
-                  decoding="async"
-                  onLoad={() => setImgLoaded(true)}
-                  onError={handleImageError}
-                />
-              </a>
-            ) : (
-              <div className="text-xs opacity-70 space-y-1">
-                <p>Image failed to load</p>
-                <a
-                  href={imageSrc}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline"
+    <>
+      <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+        <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm relative ${cls} ${isPending ? 'opacity-70' : ''} ${isFailed ? 'border border-red-500/50' : ''}`}>
+          {msg.type === 'image' && imageSrc && (
+            <div className="mb-1">
+              {!imgLoaded && !imgError && (
+                <div className="w-48 h-32 bg-black/20 rounded-lg flex items-center justify-center">
+                  <ImageIcon className="w-8 h-8 opacity-40" />
+                </div>
+              )}
+              {!imgError ? (
+                <button
+                  type="button"
+                  className="block border-0 p-0 bg-transparent cursor-pointer"
+                  onClick={() => setViewerOpen(true)}
                 >
-                  Open image link
-                </a>
-              </div>
-            )}
+                  <img
+                    src={imageSrc}
+                    alt={msg.filename || 'image'}
+                    className={`max-w-full rounded-lg hover:opacity-90 transition-opacity ${imgLoaded ? '' : 'hidden'}`}
+                    style={{ maxHeight: '300px' }}
+                    loading="eager"
+                    decoding="async"
+                    onLoad={() => setImgLoaded(true)}
+                    onError={handleImageError}
+                    draggable={false}
+                  />
+                </button>
+              ) : (
+                <div className="text-xs opacity-70 space-y-1">
+                  <p>Image failed to load</p>
+                  <button
+                    type="button"
+                    className="underline text-left"
+                    onClick={() => setViewerOpen(true)}
+                  >
+                    重试查看
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {msg.content && (
+            <p className="break-words whitespace-pre-wrap">{msg.content}</p>
+          )}
+          <div className={`flex items-center gap-1 mt-1 ${isOwn ? 'text-white/60' : 'text-gray-500'}`}>
+            <p className="text-[10px]">{formatChatTime(msg.created_at)}</p>
+            {isPending && <Loader2 className="w-3 h-3 animate-spin" />}
+            {isFailed && <AlertCircle className="w-3 h-3 text-red-400" />}
           </div>
-        )}
-        {msg.content && (
-          <p className="break-words whitespace-pre-wrap">{msg.content}</p>
-        )}
-        <div className={`flex items-center gap-1 mt-1 ${isOwn ? 'text-white/60' : 'text-gray-500'}`}>
-          <p className="text-[10px]">{formatChatTime(msg.created_at)}</p>
-          {isPending && <Loader2 className="w-3 h-3 animate-spin" />}
-          {isFailed && <AlertCircle className="w-3 h-3 text-red-400" />}
         </div>
       </div>
-    </div>
+
+      <ChatImageViewer
+        open={viewerOpen}
+        imageSrc={imageSrc}
+        filename={msg.filename}
+        onClose={() => setViewerOpen(false)}
+      />
+    </>
   );
 };
 
