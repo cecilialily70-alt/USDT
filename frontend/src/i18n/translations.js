@@ -34,7 +34,7 @@ export const translations = {
       feature2Title: 'Bank-Level Security',
       feature2Desc: 'Secure infrastructure, controlled access, and industry-standard protections.',
       feature3Title: 'Dedicated Support',
-      feature3Desc: 'A trained team on WhatsApp to guide you from request to confirmation.',
+      feature3Desc: 'A trained support team to guide you from request to confirmation.',
       feature4Title: 'Verified & Compliant',
       feature4Desc: 'Compliance-oriented operations with clear policies and secure handling.'
     },
@@ -43,8 +43,8 @@ export const translations = {
       subtitle: 'A simple 3-step workflow for USDT exchange',
       step1Title: 'Choose Amount',
       step1Desc: 'Select buy or sell and enter the USDT amount you want to exchange.',
-      step2Title: 'Confirm on WhatsApp',
-      step2Desc: 'Send your details to our broker for confirmation and quick processing.',
+      step2Title: 'Confirm with Support',
+      step2Desc: 'Send your details to our team for confirmation and quick processing.',
       step3Title: 'Receive ILS',
       step3Desc: 'Receive your ILS via bank transfer with transaction confirmation.'
     },
@@ -82,7 +82,7 @@ export const translations = {
       title: 'Trusted by Professionals',
       subtitle: 'Verified customer feedback',
       review1: '"Professional, fast, and transparent. Clear terms and reliable settlement every time."',
-      review2: '"Transparent rates, quick processing, and excellent WhatsApp support."',
+      review2: '"Transparent rates, quick processing, and excellent live support."',
       review3: '"Highly professional service. No issues during months of transactions."',
       review4: '"Smooth workflow and competitive rates, with responsive support."',
       review5: '"Reliable USDT↔ILS exchange in Israel. Strong communication and fast confirmations."',
@@ -120,8 +120,8 @@ export const translations = {
       cancel: 'Cancel',
       errorTitle: 'Invalid Amount',
       errorAmount: 'Please enter a valid amount greater than 0',
-      whatsappBuy: 'Hi, I want to buy {usdt} USDT for {ils} ILS',
-      whatsappSell: 'Hi, I want to sell {usdt} USDT for {ils} ILS'
+      chatBuy: 'Hi, I want to buy {usdt} USDT for {ils} ILS',
+      chatSell: 'Hi, I want to sell {usdt} USDT for {ils} ILS'
     },
     chat: {
       title: 'Live Support',
@@ -230,8 +230,6 @@ export const translations = {
         addIp: 'Add IP',
         whitelistEmpty: 'No IPs in whitelist yet.',
         autoBadge: 'Auto',
-        whatsappLabel: 'WhatsApp Contact Links (Auto-assigned)',
-        whatsappPlaceholder: 'Enter WhatsApp links here...',
         saving: 'Saving and Applying...',
         saveAll: 'Save All Configurations',
       },
@@ -291,7 +289,7 @@ export const translations = {
       feature2Title: 'אבטחה ברמה בנקאית',
       feature2Desc: 'תשתיות מאובטחות, גישה מבוקרת והגנות סטנדרטיות בתעשייה.',
       feature3Title: 'תמיכה ייעודית',
-      feature3Desc: 'צוות מקצועי ב-WhatsApp שמלווה אותך מאישור הבקשה ועד קבלת ההנחיה.',
+      feature3Desc: 'צוות מקצועי שמלווה אותך מאישור הבקשה ועד קבלת ההנחיה.',
       feature4Title: 'מאומת ובקרת-ציות',
       feature4Desc: 'פעילות ממוקדת תאימות עם מדיניות ברורה וטיפול מאובטח.'
     },
@@ -300,7 +298,7 @@ export const translations = {
       subtitle: 'תהליך מסודר בן 3 שלבים להמרת USDT',
       step1Title: 'בחר סכום',
       step1Desc: 'בחר קנייה או מכירה והזן את כמות ה-USDT שברצונך להמיר.',
-      step2Title: 'אישור דרך WhatsApp',
+      step2Title: 'אישור עם התמיכה',
       step2Desc: 'שלח את הפרטים לצוות שלנו לאישור מהיר ולביצוע מסודר.',
       step3Title: 'קבלת ILS',
       step3Desc: 'קבל את ה-ILS בהעברה בנקאית עם אישור עסקה.'
@@ -339,7 +337,7 @@ export const translations = {
       title: 'מהימן על ידי אנשי מקצוע',
       subtitle: 'חוות דעת מאומתות מלקוחות',
       review1: '"מקצועי, מהיר ושקוף. תנאים ברורים וסילוק אמין בכל עסקה."',
-      review2: '"שערים שקופים, טיפול מהיר ותמיכת WhatsApp מצוינת."',
+      review2: '"שערים שקופים, טיפול מהיר ותמיכה חיה מצוינת."',
       review3: '"שירות מקצועי לאורך זמן. ללא תקלות בתקופות של עסקאות."',
       review4: '"תהליך מסודר, שערים תחרותיים, ותמיכה מהירה ומדויקת."',
       review5: '"USDT↔ILS בישראל עם תקשורת ברורה ואישורים מהירים."',
@@ -377,8 +375,8 @@ export const translations = {
       cancel: 'ביטול',
       errorTitle: 'סכום לא חוקי',
       errorAmount: 'אנא הזן סכום חוקי גדול מ-0',
-      whatsappBuy: 'שלום, אני רוצה לקנות {usdt} USDT תמורת {ils} ₪',
-      whatsappSell: 'שלום, אני רוצה למכור {usdt} USDT תמורת {ils} ₪'
+      chatBuy: 'שלום, אני רוצה לקנות {usdt} USDT תמורת {ils} ₪',
+      chatSell: 'שלום, אני רוצה למכור {usdt} USDT תמורת {ils} ₪'
     },
     chat: {
       title: 'צ\'אט תמיכה',
@@ -487,8 +485,6 @@ export const translations = {
         addIp: 'הוסף IP',
         whitelistEmpty: 'אין עדיין כתובות IP ברשימה.',
         autoBadge: 'אוטו',
-        whatsappLabel: 'קישורי WhatsApp (מוקצים אוטומטית)',
-        whatsappPlaceholder: 'הזן קישורי WhatsApp כאן...',
         saving: 'שומר ומחיל...',
         saveAll: 'שמור את כל ההגדרות',
       },
@@ -548,7 +544,7 @@ export const translations = {
       feature2Title: 'أمان بمستوى البنوك',
       feature2Desc: 'بنية تحتية آمنة، وصول مُتحكم به، وحماية وفق معايير الصناعة.',
       feature3Title: 'دعم مخصص',
-      feature3Desc: 'فريق محترف عبر WhatsApp يرافقك من الطلب حتى التأكيد.',
+      feature3Desc: 'فريق محترف يرافقك من الطلب حتى التأكيد.',
       feature4Title: 'موثّق وملتزم',
       feature4Desc: 'عمليات موجهة للامتثال بسياسات واضحة ومعالجة آمنة.'
     },
@@ -557,7 +553,7 @@ export const translations = {
       subtitle: 'سير عمل بسيط من 3 خطوات لتبادل USDT',
       step1Title: 'اختر المبلغ',
       step1Desc: 'اختر الشراء أو البيع وأدخل كمية USDT التي تريد تبادلها.',
-      step2Title: 'أكد عبر WhatsApp',
+      step2Title: 'أكد مع الدعم',
       step2Desc: 'أرسل تفاصيلك لفريقنا للتأكيد والمعالجة السريعة.',
       step3Title: 'استلم ILS',
       step3Desc: 'استلم الـ ILS عبر التحويل المصرفي مع تأكيد المعاملة.'
@@ -596,7 +592,7 @@ export const translations = {
       title: 'موثوق به من المحترفين',
       subtitle: 'ملاحظات عملاء موثقة',
       review1: '"احترافي وسريع وشفاف. شروط واضحة وتسوية موثوقة في كل مرة."',
-      review2: '"أسعار شفافة، معالجة سريعة، ودعم واتساب ممتاز."',
+      review2: '"أسعار شفافة، معالجة سريعة، ودعم مباشر ممتاز."',
       review3: '"خدمة احترافية للغاية. بدون مشاكل خلال أشهر من المعاملات."',
       review4: '"سير عمل سلس وأسعار تنافسية مع دعم سريع الاستجابة."',
       review5: '"تبادل USDT↔ILS موثوق في إسرائيل. تواصل قوي وتأكيدات سريعة."',
@@ -630,12 +626,12 @@ export const translations = {
       usdtAmount: 'مبلغ USDT',
       ilsAmount: 'مبلغ الشيكل (₪)',
       exchangeRate: 'سعر الصرف',
-      contactTrader: 'اتصل بالمتداول',
+      contactTrader: 'اتصل بالدعم',
       cancel: 'إلغاء',
       errorTitle: 'مبلغ غير صالح',
       errorAmount: 'يرجى إدخال مبلغ صالح أكبر من 0',
-      whatsappBuy: 'مرحباً، أريد شراء {usdt} USDT مقابل {ils} شيكل',
-      whatsappSell: 'مرحباً، أريد بيع {usdt} USDT مقابل {ils} شيكل'
+      chatBuy: 'مرحباً، أريد شراء {usdt} USDT مقابل {ils} شيكل',
+      chatSell: 'مرحباً، أريد بيع {usdt} USDT مقابل {ils} شيكل'
     },
     chat: {
       title: 'دعم مباشر',
@@ -744,8 +740,6 @@ export const translations = {
         addIp: 'إضافة IP',
         whitelistEmpty: 'لا توجد عناوين IP بعد.',
         autoBadge: 'تلقائي',
-        whatsappLabel: 'روابط واتساب (تُعيَّن تلقائياً)',
-        whatsappPlaceholder: 'أدخل روابط واتساب هنا...',
         saving: 'جاري الحفظ والتطبيق...',
         saveAll: 'حفظ جميع الإعدادات',
       },

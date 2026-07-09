@@ -27,7 +27,6 @@ const AdminPanel = () => {
   const [config, setConfig] = useState({
     buyRate: 4.4,
     sellRate: 3.3,
-    whatsappLink: 'https://wa.me/972552452669',
     adminPath: '',
     adminPassword: '',
     passwordSet: false,
@@ -110,7 +109,6 @@ const AdminPanel = () => {
       const payload = {
         buyRate: config.buyRate,
         sellRate: config.sellRate,
-        whatsappLink: config.whatsappLink,
         adminPath: config.adminPath,
         adminPassword: (config.adminPassword || '').trim(),
       };
@@ -364,20 +362,6 @@ const AdminPanel = () => {
         </div>
 
         <Card className="glass-card p-6 md:p-8 border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 shadow-xl shadow-purple-500/10 mb-12">
-            <div className="mb-6">
-              <Label htmlFor="whatsappLink" className="text-gray-200 text-base md:text-lg font-semibold mb-2 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
-                {s.whatsappLabel}
-              </Label>
-              <textarea
-                id="whatsappLink"
-                value={config.whatsappLink}
-                onChange={(e) => handleInputChange('whatsappLink', e.target.value)}
-                className="w-full rounded-xl bg-[#0a0e1a]/80 border border-purple-500/30 focus:border-purple-500 text-white text-base md:text-lg p-4 min-h-[120px] outline-none resize-y"
-                placeholder={s.whatsappPlaceholder}
-              ></textarea>
-            </div>
-
             <Button onClick={handleSave} disabled={loading} className="w-full bg-gradient-to-r from-blue-500 via-purple-500 to-blue-600 hover:from-blue-600 hover:via-purple-600 hover:to-blue-700 text-white h-14 md:h-16 text-lg font-semibold shadow-xl hover:scale-[1.02] transition-all duration-300 rounded-xl">
               {loading ? (
                 <><RefreshCw className="w-5 h-5 me-2 animate-spin" /> {s.saving}</>

@@ -17,7 +17,7 @@ const LegalPage = ({ type }) => {
         <p className="text-gray-400 leading-relaxed whitespace-pre-wrap">
           {isTerms
             ? (t.footer.termsBody ||
-              'By using this exchange service you agree to transparent rates, secure processing, and compliance-oriented settlement. Contact support via WhatsApp for trade confirmation.')
+              'By using this exchange service you agree to transparent rates, secure processing, and compliance-oriented settlement. Contact support via live chat for trade confirmation.')
             : (t.footer.privacyBody ||
               'We process only the information needed to complete exchanges and support chat (such as name and Israeli mobile number). Chat data is retained for a limited period and then deleted.')}
         </p>

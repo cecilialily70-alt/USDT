@@ -4,10 +4,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { ArrowDownUp, MessageCircle, X } from 'lucide-react';
+import { ArrowDownUp, MessageSquare, X } from 'lucide-react';
 import { toast } from 'sonner';
 
-const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRate = 3.3, whatsappLink }) => {
+const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRate = 3.3 }) => {
   const { t } = useLanguage();
   const [usdtAmount, setUsdtAmount] = useState('');
   const [ilsAmount, setIlsAmount] = useState('');
@@ -41,7 +41,7 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
     }
   };
 
-  const handleContactTrader = () => {
+  const handleContactSupport = () => {
     if (!usdtAmount || parseFloat(usdtAmount) <= 0) {
       toast.error(t.tradeModal?.errorTitle || 'Error', {
         description: t.tradeModal?.errorAmount || 'Please enter a valid amount',
@@ -49,26 +49,12 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
       return;
     }
 
-    const linksArray = whatsappLink 
-      ? whatsappLink.split(/[\n,]+/).map(link => link.trim()).filter(link => link.length > 0) 
-      : [];
-      
-    const selectedLink = linksArray.length > 0 
-      ? linksArray[Math.floor(Math.random() * linksArray.length)] 
-      : 'https://wa.me/972552452669';
+    const template = tradeType === 'buy'
+      ? (t.tradeModal?.chatBuy || 'Hi, I want to buy {usdt} USDT for {ils} ILS')
+      : (t.tradeModal?.chatSell || 'Hi, I want to sell {usdt} USDT for {ils} ILS');
 
-    const template = tradeType === 'buy' 
-      ? (t.tradeModal?.whatsappBuy || 'Hi, I want to buy {usdt} USDT for {ils} ILS')
-      : (t.tradeModal?.whatsappSell || 'Hi, I want to sell {usdt} USDT for {ils} ILS');
-      
     const message = template.replace('{usdt}', usdtAmount).replace('{ils}', ilsAmount);
-    const encodedMessage = encodeURIComponent(message);
-    
-    const finalUrl = selectedLink.includes('?') 
-      ? `${selectedLink}&text=${encodedMessage}`
-      : `${selectedLink}?text=${encodedMessage}`;
-
-    window.open(finalUrl, '_blank', 'noopener,noreferrer');
+    window.dispatchEvent(new CustomEvent('open-chat', { detail: { draft: message } }));
     onClose();
   };
 
@@ -104,11 +90,9 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
                 placeholder="0.00"
                 value={usdtAmount}
                 onChange={handleUsdtChange}
-                onFocus={(e) => e.target.select()} 
-                /* 【核心优化】使用 pe-16 逻辑边距，自动适配 RTL 和 LTR 语言排版 */
+                onFocus={(e) => e.target.select()}
                 className="bg-[#0a0e1a]/50 border-white/10 text-white text-lg h-14 pe-16 focus:border-blue-500 focus:ring-blue-500"
               />
-              {/* 【核心优化】使用 end-4 逻辑定位 */}
               <div className="absolute end-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold pointer-events-none">
                 USDT
               </div>
@@ -134,10 +118,8 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
                 value={ilsAmount}
                 onChange={handleIlsChange}
                 onFocus={(e) => e.target.select()}
-                /* 【核心优化】使用 pe-16 逻辑边距 */
                 className="bg-[#0a0e1a]/50 border-white/10 text-white text-lg h-14 pe-16 focus:border-blue-500 focus:ring-blue-500"
               />
-              {/* 【核心优化】使用 end-4 逻辑定位 */}
               <div className="absolute end-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold pointer-events-none">
                 ₪ ILS
               </div>
@@ -154,11 +136,11 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
               {t.tradeModal?.cancel || 'Cancel'}
             </Button>
             <Button
-              onClick={handleContactTrader}
+              onClick={handleContactSupport}
               className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white h-12 font-semibold shadow-lg hover:shadow-blue-500/50 transition-all duration-300"
             >
-              <MessageCircle className="w-4 h-4 me-2" />
-              {t.tradeModal?.contactTrader || 'Contact Trader'}
+              <MessageSquare className="w-4 h-4 me-2" />
+              {t.tradeModal?.contactTrader || 'Contact Support'}
             </Button>
           </div>
         </div>

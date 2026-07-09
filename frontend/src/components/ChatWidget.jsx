@@ -177,6 +177,18 @@ const ChatWidget = () => {
   }, [visitorName, visitorPhone]);
 
   useEffect(() => {
+    const handleOpenChat = (event) => {
+      setIsOpen(true);
+      const draft = event?.detail?.draft;
+      if (typeof draft === 'string' && draft.trim()) {
+        setInput(draft.trim());
+      }
+    };
+    window.addEventListener('open-chat', handleOpenChat);
+    return () => window.removeEventListener('open-chat', handleOpenChat);
+  }, []);
+
+  useEffect(() => {
     if (!needsRegister && visitorName && visitorPhone) {
       initSession(visitorName, visitorPhone).catch(() => {});
       syncFromServer();

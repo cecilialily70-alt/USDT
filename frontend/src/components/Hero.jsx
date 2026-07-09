@@ -16,7 +16,6 @@ const Hero = () => {
   const [config, setConfig] = useState({
     buyRate: 4.4,
     sellRate: 3.3,
-    whatsappLink: 'https://wa.me/972552452669'
   });
 
   useEffect(() => {
@@ -160,7 +159,6 @@ const Hero = () => {
         tradeType={tradeType}
         buyRate={config.buyRate}
         sellRate={config.sellRate}
-        whatsappLink={config.whatsappLink}
       />
 
       <style jsx>{`

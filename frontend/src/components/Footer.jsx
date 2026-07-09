@@ -1,34 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { MessageCircle } from 'lucide-react';
-import { Button } from './ui/button';
-import axios from 'axios';
-
-const API = '/api';
 
 const Footer = () => {
   const { t } = useLanguage();
   const currentYear = new Date().getFullYear();
-  const [whatsappLink, setWhatsappLink] = useState('https://wa.me/972552452669');
 
-  useEffect(() => {
-    fetchWhatsappLink();
-  }, []);
-
-  const fetchWhatsappLink = async () => {
-    try {
-      const response = await axios.get(`${API}/config`);
-      const rawLinks = response.data.whatsappLink;
-      
-      const linksArray = rawLinks ? rawLinks.split(/[\n,]+/).map(link => link.trim()).filter(link => link.length > 0) : [];
-      
-      if (linksArray.length > 0) {
-        const randomLink = linksArray[Math.floor(Math.random() * linksArray.length)];
-        setWhatsappLink(randomLink);
-      }
-    } catch (error) {
-      console.log('Using default WhatsApp link');
-    }
+  const openChat = (e) => {
+    e.preventDefault();
+    window.dispatchEvent(new CustomEvent('open-chat'));
   };
 
   return (
@@ -72,7 +51,7 @@ const Footer = () => {
               <a href="/privacy" className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.footer.privacy}
               </a>
-              <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#26A17B] transition-colors">
+              <a href="#chat" onClick={openChat} className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.footer.contact}
               </a>
             </div>
@@ -83,20 +62,6 @@ const Footer = () => {
           <p>© {currentYear} {t.footer.brand}. {t.footer.rights}</p>
         </div>
       </div>
-
-      <a
-        href={whatsappLink}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="fixed bottom-4 end-4 md:bottom-8 md:end-8 z-50"
-      >
-        <Button
-          size="lg"
-          className="w-12 h-12 md:w-16 md:h-16 rounded-full bg-[#25D366] hover:bg-[#20BA5A] shadow-2xl hover:shadow-[#25D366]/50 transition-all duration-300 hover:scale-110 p-0 animate-glow flex items-center justify-center"
-        >
-          <MessageCircle className="w-6 h-6 md:w-8 md:h-8 text-white" />
-        </Button>
-      </a>
     </footer>
   );
 };
