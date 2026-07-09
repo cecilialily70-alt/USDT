@@ -4,7 +4,7 @@ import { formatChatTime, resolveChatImageUrl } from '../utils/chatHelpers';
 import { Loader2, AlertCircle, ImageIcon } from 'lucide-react';
 import ChatImageViewer from './ChatImageViewer';
 
-const ChatMessageBubble = ({ msg, isOwn }) => {
+const ChatMessageBubble = ({ msg, isOwn, onRetry }) => {
   const { t, locale } = useLanguage();
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
@@ -91,6 +91,15 @@ const ChatMessageBubble = ({ msg, isOwn }) => {
             {isPending && <Loader2 className="w-3 h-3 animate-spin" />}
             {isFailed && <AlertCircle className="w-3 h-3 text-red-400" />}
           </div>
+          {isFailed && onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-1 text-[11px] underline opacity-90 hover:opacity-100"
+            >
+              {t.chat.sendFailedRetry || t.chat.imageRetry}
+            </button>
+          )}
         </div>
       </div>
 

@@ -3,18 +3,27 @@
   "builds": [
     {
       "src": "backend/server.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
     },
     {
       "src": "frontend/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "installCommand": "yarn install",
-        "buildCommand": "yarn build",
+        "installCommand": "npm ci",
+        "buildCommand": "npm run build",
         "outputDirectory": "build"
       }
     }
   ],
+  "functions": {
+    "backend/server.py": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
   "routes": [
     {
       "src": "/api/(.*)",

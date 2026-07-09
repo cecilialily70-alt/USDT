@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { LanguageProvider } from './contexts/LanguageContext';
-import { Toaster } from 'sonner';
+import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
+import { Toaster, toast } from 'sonner';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import Features from './components/Features';
@@ -12,6 +12,7 @@ import Reviews from './components/Reviews';
 import Footer from './components/Footer';
 import ChatWidget from './components/ChatWidget';
 import AdminOrNotFound from './components/AdminOrNotFound';
+import LegalPage from './pages/LegalPage';
 import axios from 'axios';
 import './App.css';
 
@@ -38,9 +39,21 @@ const MainLayout = ({ children }) => (
 
 const isHomePath = (path) => path === '/' || path === '';
 
+const RegionBlocked = () => {
+  const { t } = useLanguage();
+  return (
+    <div className="min-h-screen bg-[#06080F] flex flex-col items-center justify-center px-6 text-center">
+      <p className="text-white text-lg mb-2">{t.errors.accessDeniedRegion}</p>
+      <a href="/" className="text-blue-400 hover:underline text-sm">{t.admin.retry}</a>
+    </div>
+  );
+};
+
 const AppRoutes = () => {
   const location = useLocation();
+  const { t } = useLanguage();
   const [isAllowed, setIsAllowed] = useState(() => !isHomePath(location.pathname));
+  const [regionBlocked, setRegionBlocked] = useState(false);
 
   useEffect(() => {
     const interceptor = axios.interceptors.response.use(
@@ -48,11 +61,20 @@ const AppRoutes = () => {
       (error) => {
         if (error.response?.status === 403) {
           const reqUrl = error.config?.url || '';
+          const detail = error.response?.data?.detail;
           const onAdminPage = !isHomePath(window.location.pathname);
           if (reqUrl.includes('/api/admin/') || onAdminPage) {
             return Promise.reject(error);
           }
-          window.location.href = 'https://www.google.com';
+          if (detail === 'ACCESS_DENIED_REGION' || detail === 'BLACKLISTED') {
+            setRegionBlocked(true);
+            toast.error(
+              detail === 'BLACKLISTED'
+                ? (t.errors.blacklisted)
+                : (t.errors.accessDeniedRegion)
+            );
+            return Promise.reject(error);
+          }
         }
         return Promise.reject(error);
       }
@@ -66,9 +88,11 @@ const AppRoutes = () => {
       try {
         await axios.get('/api/config');
         setIsAllowed(true);
+        setRegionBlocked(false);
       } catch (error) {
         if (error.response?.status === 403) {
-          window.location.href = 'https://www.google.com';
+          setRegionBlocked(true);
+          setIsAllowed(false);
         } else {
           setIsAllowed(true);
         }
@@ -80,7 +104,11 @@ const AppRoutes = () => {
     return () => {
       axios.interceptors.response.eject(interceptor);
     };
-  }, [location.pathname]);
+  }, [location.pathname, t]);
+
+  if (regionBlocked) {
+    return <RegionBlocked />;
+  }
 
   if (!isAllowed) {
     return <div className="min-h-screen bg-[#06080F]"></div>;
@@ -96,6 +124,8 @@ const AppRoutes = () => {
           </MainLayout>
         }
       />
+      <Route path="/terms" element={<LegalPage type="terms" />} />
+      <Route path="/privacy" element={<LegalPage type="privacy" />} />
       <Route path="*" element={<AdminOrNotFound />} />
     </Routes>
   );

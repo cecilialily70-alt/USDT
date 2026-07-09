@@ -29,6 +29,9 @@ export const LanguageProvider = ({ children }) => {
       setDirection(lang.dir);
       document.documentElement.setAttribute('dir', lang.dir);
       document.documentElement.setAttribute('lang', langCode);
+      if (lang.footer?.pageTitle) {
+        document.title = lang.footer.pageTitle;
+      }
       localStorage.setItem('language', langCode);
     }
   };

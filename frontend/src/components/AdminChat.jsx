@@ -311,10 +311,10 @@ const AdminChat = () => {
     <Card className="glass-card border-green-500/20 hover:border-green-500/40 transition-all duration-300 shadow-xl shadow-green-500/10 md:col-span-2">
       <div className="flex items-center justify-between p-6 border-b border-white/10">
         <h2 className="text-xl md:text-2xl font-bold text-white flex items-center">
-          <MessageSquare className="w-6 h-6 mr-3 text-green-400" />
+          <MessageSquare className="w-6 h-6 me-3 text-green-400" />
           {ac.title}
           {totalUnread > 0 && (
-            <Badge className="ml-3 bg-red-500/80 text-white border-none">{totalUnread} {ac.newBadge}</Badge>
+            <Badge className="ms-3 bg-red-500/80 text-white border-none">{totalUnread} {ac.newBadge}</Badge>
           )}
         </h2>
         <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={loading} className="text-gray-400 hover:text-white">
@@ -350,7 +350,7 @@ const AdminChat = () => {
               <button
                 key={session.session_id}
                 onClick={() => handleSelectSession(session)}
-                className={`w-full text-left p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${
+                className={`w-full text-start p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${
                   selectedSession?.session_id === session.session_id ? 'bg-white/10' : ''
                 }`}
               >
@@ -367,7 +367,7 @@ const AdminChat = () => {
                       )}
                     </div>
                     {(session.blacklisted) && (
-                      <Badge className="bg-red-600/80 text-white border-none text-[10px] px-1.5 py-0 mr-1">
+                      <Badge className="bg-red-600/80 text-white border-none text-[10px] px-1.5 py-0 me-1">
                         {ac.blocked}
                       </Badge>
                     )}
@@ -386,7 +386,7 @@ const AdminChat = () => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-red-400/60 hover:text-red-400 hover:bg-red-500/10 shrink-0 ml-2"
+                    className="text-red-400/60 hover:text-red-400 hover:bg-red-500/10 shrink-0 ms-2"
                     onClick={(e) => handleDeleteSession(session.session_id, e)}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -397,8 +397,8 @@ const AdminChat = () => {
                     size="sm"
                     className={
                       session.blacklisted
-                        ? 'text-amber-300/80 hover:text-amber-200 hover:bg-amber-500/10 shrink-0 ml-2'
-                        : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10 shrink-0 ml-2'
+                        ? 'text-amber-300/80 hover:text-amber-200 hover:bg-amber-500/10 shrink-0 ms-2'
+                        : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10 shrink-0 ms-2'
                     }
                     onClick={(e) => handleBlacklistForSession(session, e)}
                     title={session.blacklisted ? ac.unblockTitle : ac.blockTitle}
@@ -464,7 +464,7 @@ const AdminChat = () => {
                   onClick={handleSendReply}
                   disabled={!reply.trim() || sending}
                   size="icon"
-                  className="h-10 w-10 bg-green-600 hover:bg-green-700 shrink-0"
+                  className="h-10 w-10 bg-green-600 hover:bg-green-700 shrink-0 rtl:scale-x-[-1]"
                 >
                   <Send className="w-4 h-4" />
                 </Button>

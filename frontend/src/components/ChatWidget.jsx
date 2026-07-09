@@ -14,6 +14,8 @@ import {
   formatIsraeliPhoneInput,
   createClientMessageId,
   getApiErrorMessage,
+  visitorChatHeaders,
+  visitorChatParams,
 } from '../utils/chatHelpers';
 import {
   MAX_IMAGE_SIZE_BYTES,
@@ -82,7 +84,8 @@ const ChatWidget = () => {
     if (needsRegister) return;
     try {
       const res = await axios.get(`${API}/chat/sync`, {
-        params: { session_id: sessionId.current },
+        params: visitorChatParams(sessionId.current, visitorPhone),
+        headers: visitorChatHeaders(visitorPhone),
       });
       const serverMsgs = res.data.messages || [];
       const serverUnread = res.data.unread_visitor || 0;
@@ -95,14 +98,17 @@ const ChatWidget = () => {
     } catch {
       // keep local state on network error
     }
-  }, [needsRegister, isOpen, applyMessages]);
+  }, [needsRegister, isOpen, applyMessages, visitorPhone]);
 
   const fetchMessages = useCallback(async (since = null, fullLoad = false) => {
     try {
-      const params = { session_id: sessionId.current };
+      const params = visitorChatParams(sessionId.current, visitorPhone);
       if (since && !fullLoad) params.since = since;
 
-      const res = await axios.get(`${API}/chat/messages`, { params });
+      const res = await axios.get(`${API}/chat/messages`, {
+        params,
+        headers: visitorChatHeaders(visitorPhone),
+      });
       const newMsgs = res.data.messages || [];
 
       if (newMsgs.length > 0 || fullLoad) {
@@ -118,7 +124,7 @@ const ChatWidget = () => {
     } catch {
       // keep local/pending messages on network error
     }
-  }, [isOpen, applyMessages]);
+  }, [isOpen, applyMessages, visitorPhone]);
 
   const initSession = useCallback(async (name, phone) => {
     await axios.post(`${API}/chat/session`, {
@@ -145,7 +151,7 @@ const ChatWidget = () => {
           form.append('visitor_phone', visitorPhone);
           form.append('client_message_id', msg.client_message_id);
           res = await axios.post(`${API}/chat/upload`, form, {
-            headers: { 'Content-Type': 'multipart/form-data' },
+            headers: { 'Content-Type': 'multipart/form-data', ...visitorChatHeaders(visitorPhone) },
           });
         } else {
           res = await axios.post(`${API}/chat/messages`, {
@@ -154,7 +160,7 @@ const ChatWidget = () => {
             visitor_name: visitorName,
             visitor_phone: visitorPhone,
             client_message_id: msg.client_message_id,
-          });
+          }, { headers: visitorChatHeaders(visitorPhone) });
         }
         removePendingMessage(sessionId.current, msg.client_message_id);
         pendingFilesRef.current.delete(msg.client_message_id);
@@ -206,7 +212,10 @@ const ChatWidget = () => {
 
   useEffect(() => {
     if (!needsRegister && !isOpen) {
-      const bgPoll = setInterval(syncFromServer, POLL_INTERVAL);
+      const bgPoll = setInterval(() => {
+        if (document.visibilityState === 'hidden') return;
+        syncFromServer();
+      }, POLL_INTERVAL);
       return () => clearInterval(bgPoll);
     }
   }, [needsRegister, isOpen, syncFromServer]);
@@ -216,7 +225,10 @@ const ChatWidget = () => {
       setUnread(0);
       lastSinceRef.current = null;
       fetchMessages(null, true);
-      pollRef.current = setInterval(() => fetchMessages(lastSinceRef.current), POLL_INTERVAL);
+      pollRef.current = setInterval(() => {
+        if (document.visibilityState === 'hidden') return;
+        fetchMessages(lastSinceRef.current);
+      }, POLL_INTERVAL);
     } else {
       clearInterval(pollRef.current);
     }
@@ -226,6 +238,51 @@ const ChatWidget = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const handleRetryMessage = async (msg) => {
+    if (!msg?.client_message_id || sending || uploading) return;
+    if (msg.type === 'image') {
+      const file = pendingFilesRef.current.get(msg.client_message_id);
+      if (!file) return;
+      setUploading(true);
+      try {
+        const form = new FormData();
+        form.append('session_id', sessionId.current);
+        form.append('file', file, file.name);
+        form.append('content', msg.content || '');
+        form.append('visitor_name', visitorName);
+        form.append('visitor_phone', visitorPhone);
+        form.append('client_message_id', msg.client_message_id);
+        const res = await axios.post(`${API}/chat/upload`, form, {
+          headers: { 'Content-Type': 'multipart/form-data', ...visitorChatHeaders(visitorPhone) },
+          timeout: 120000,
+        });
+        removePendingMessage(sessionId.current, msg.client_message_id);
+        pendingFilesRef.current.delete(msg.client_message_id);
+        setMessages((prev) =>
+          mergeMessages(prev.filter((m) => m.client_message_id !== msg.client_message_id), [res.data.message])
+        );
+      } catch (err) {
+        setPhoneError(getApiErrorMessage(err, t.chat.imageUploadFailed, t));
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
+    setSending(true);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.client_message_id === msg.client_message_id ? { ...m, status: 'pending' } : m
+      )
+    );
+    try {
+      await sendTextMessage(msg.content, msg.client_message_id);
+    } catch {
+      // sendTextMessage already marks failed
+    } finally {
+      setSending(false);
+    }
+  };
 
   const handleRegister = async () => {
     const name = nameInput.trim();
@@ -279,7 +336,7 @@ const ChatWidget = () => {
         visitor_name: visitorName,
         visitor_phone: visitorPhone,
         client_message_id: clientMessageId,
-      });
+      }, { headers: visitorChatHeaders(visitorPhone) });
       removePendingMessage(sessionId.current, clientMessageId);
       const serverMsg = {
         ...res.data.message,
@@ -357,7 +414,7 @@ const ChatWidget = () => {
       form.append('client_message_id', clientId);
 
       const res = await axios.post(`${API}/chat/upload`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'multipart/form-data', ...visitorChatHeaders(visitorPhone) },
         timeout: 120000,
       });
       URL.revokeObjectURL(previewUrl);
@@ -463,6 +520,7 @@ const ChatWidget = () => {
                     key={msg.message_id || msg.client_message_id}
                     msg={msg}
                     isOwn={msg.sender === 'visitor'}
+                    onRetry={msg.status === 'failed' ? () => handleRetryMessage(msg) : undefined}
                   />
                 ))}
                 <div ref={messagesEndRef} />
@@ -512,7 +570,8 @@ const ChatWidget = () => {
 
       <button
         onClick={toggleOpen}
-        className="fixed top-20 right-4 md:top-24 md:right-8 z-50 w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-2xl hover:shadow-purple-500/40 transition-all duration-300 hover:scale-110 flex items-center justify-center"
+        className="fixed bottom-20 end-4 md:bottom-24 md:end-8 z-50 w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-2xl hover:shadow-purple-500/40 transition-all duration-300 hover:scale-110 flex items-center justify-center"
+        aria-label={t.chat.title}
       >
         {isOpen ? (
           <X className="w-5 h-5 md:w-6 md:h-6 text-white" />

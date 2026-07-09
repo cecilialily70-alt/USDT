@@ -9,3 +9,4 @@ certifi
 motor==3.3.2
 PyJWT==2.8.0
 httpx==0.27.0
+bcrypt==4.2.1

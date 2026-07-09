@@ -21,7 +21,19 @@ const ERROR_TO_ERRORS_KEY = {
   BLACKLISTED: 'blacklisted',
   ACCESS_DENIED_REGION: 'accessDeniedRegion',
   SESSION_ID_REQUIRED: 'sessionIdRequired',
+  SESSION_ACCESS_DENIED: 'sessionAccessDenied',
+  IMAGE_ACCESS_DENIED: 'imageAccessDenied',
+  JWT_SECRET_NOT_CONFIGURED: 'jwtSecretNotConfigured',
   REQUEST_FAILED: 'requestFailed',
+};
+
+const SUCCESS_TO_TOAST_KEY = {
+  CONFIG_SAVED: 'settingsSaved',
+  WHITELIST_ADDED: 'ipAdded',
+  WHITELIST_REMOVED: 'ipRemoved',
+  BLACKLIST_ADDED: 'ipBlocked',
+  BLACKLIST_REMOVED: 'ipUnblocked',
+  SESSION_DELETED: 'sessionDeleted',
 };
 
 const ERROR_TO_CHAT_KEY = {
@@ -76,4 +88,12 @@ export const resolveApiError = (detail, t, fallback) => {
   if (hasChinese(detail)) return fb;
   if (ERROR_TO_ERRORS_KEY[code] || ERROR_TO_CHAT_KEY[code]) return fb;
   return detail;
+};
+
+export const resolveApiSuccess = (message, t, fallback = '') => {
+  if (!message || typeof message !== 'string') return fallback;
+  const toastKey = SUCCESS_TO_TOAST_KEY[message.trim()];
+  if (toastKey && t?.admin?.toast?.[toastKey]) return t.admin.toast[toastKey];
+  if (toastKey && t?.admin?.chat?.[toastKey]) return t.admin.chat[toastKey];
+  return fallback || message;
 };

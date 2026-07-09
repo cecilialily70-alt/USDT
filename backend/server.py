@@ -1,12 +1,15 @@
 import os
 import re
 import ipaddress
+import logging
 import certifi
 import asyncio
 import hashlib
+import hmac
 import uuid
 import httpx
 import time
+import bcrypt
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -16,10 +19,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import jwt
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
+from typing import Optional
+from pymongo import ReturnDocument
+
+logger = logging.getLogger("exchange")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 
 # ==========================================
 # 优化 3: 数据库性能优化 (启动时创建索引)
@@ -28,28 +37,34 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         await ensure_indexes()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("ensure_indexes failed on startup: %s", e)
     yield
 
 app = FastAPI(lifespan=lifespan)
 
+VERCEL_ENV = (os.environ.get("VERCEL_ENV") or "").strip().lower()
+IS_PRODUCTION = VERCEL_ENV == "production" or os.environ.get("ENV") == "production"
+
 # ==========================================
 # 优化 2: 严格的 CORS 限制 (保护你的专属域名)
+# Preview: also allow https://*.vercel.app
 # ==========================================
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", 
-        "http://localhost:5173", 
-        "http://127.0.0.1:3000", 
-        "https://www.ils-usdt.xyz",  # 你的主域名
-        "https://ils-usdt.xyz"       # 兼容不带 www 的访问
+_cors_kwargs = {
+    "allow_origins": [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "https://www.ils-usdt.xyz",
+        "https://ils-usdt.xyz",
     ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
-    allow_headers=["Authorization", "Content-Type"],
-)
+    "allow_credentials": True,
+    "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "allow_headers": ["Authorization", "Content-Type", "X-Visitor-Phone"],
+}
+if VERCEL_ENV == "preview":
+    _cors_kwargs["allow_origin_regex"] = r"^https://[\w.-]+\.vercel\.app$"
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
 MONGO_URL = (
     os.environ.get("MONGO_URL")
@@ -57,16 +72,21 @@ MONGO_URL = (
     or "mongodb://localhost:27017"
 ).strip().strip('"').strip("'")
 
-JWT_SECRET = os.environ.get("JWT_SECRET")
+JWT_SECRET = (os.environ.get("JWT_SECRET") or "").strip()
 if not JWT_SECRET:
-    JWT_SECRET = hashlib.sha256(f"{MONGO_URL}:exchange-admin".encode()).hexdigest()
+    logger.warning(
+        "JWT_SECRET is not set. Admin JWT auth will fail until JWT_SECRET is configured in the environment."
+    )
+    JWT_SECRET = ""
 
-DEFAULT_ADMIN_PATH = "/xiaoyan"
-DEFAULT_ADMIN_PASSWORD = "Qw123456.."
-IS_PRODUCTION = os.environ.get("VERCEL_ENV") == "production" or os.environ.get("ENV") == "production"
+# Dev-only fallbacks. Production MUST use MongoDB config (adminPath / hashed adminPassword).
+DEFAULT_ADMIN_PATH = "/admin-dev"
+DEFAULT_ADMIN_PASSWORD = "change-me-dev-only"
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60
 LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 8
-_login_attempts: dict[str, list[float]] = {}
+CHAT_RATE_LIMIT_WINDOW_SECONDS = 60
+CHAT_RATE_LIMIT_MAX_REQUESTS = 60
+IMAGE_URL_TTL_SECONDS = 15 * 60
 COUNTRY_CACHE_TTL_SECONDS = 30 * 60
 _country_cache: dict[str, tuple[str, float]] = {}
 CHAT_RETENTION_HOURS = 72
@@ -78,6 +98,57 @@ _cleanup_lock = asyncio.Lock()
 def resolve_admin_path(config: dict) -> str:
     env_path = os.environ.get("ADMIN_PATH", "").strip()
     return config.get("adminPath") or env_path or DEFAULT_ADMIN_PATH
+
+def _signing_secret() -> bytes:
+    secret = JWT_SECRET or os.environ.get("MONGO_URL") or "dev-insecure"
+    return secret.encode("utf-8")
+
+def hash_password(plain: str) -> str:
+    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+def looks_like_bcrypt(value: str) -> bool:
+    return bool(value) and value.startswith("$2") and len(value) >= 50
+
+def verify_password(plain: str, stored: str) -> bool:
+    if not plain or not stored:
+        return False
+    if looks_like_bcrypt(stored):
+        try:
+            return bcrypt.checkpw(plain.encode("utf-8"), stored.encode("utf-8"))
+        except Exception:
+            return False
+    # Legacy plaintext (migrate on next successful login / config save)
+    return hmac.compare_digest(plain, stored)
+
+def password_is_configured(config: dict) -> bool:
+    stored = (config.get("adminPassword") or "").strip()
+    if not stored:
+        return False
+    if stored == DEFAULT_ADMIN_PASSWORD:
+        return False
+    return True
+
+def make_image_token(image_id: str, session_id: str, exp: Optional[int] = None) -> str:
+    expires = exp or int(time.time()) + IMAGE_URL_TTL_SECONDS
+    payload = f"{image_id}:{session_id}:{expires}"
+    sig = hmac.new(_signing_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    return f"{expires}.{sig}"
+
+def verify_image_token(image_id: str, session_id: str, token: str) -> bool:
+    try:
+        expires_s, sig = token.split(".", 1)
+        expires = int(expires_s)
+        if expires < int(time.time()):
+            return False
+        payload = f"{image_id}:{session_id}:{expires}"
+        expected = hmac.new(_signing_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+        return hmac.compare_digest(sig, expected)
+    except Exception:
+        return False
+
+def signed_image_url(image_id: str, session_id: str) -> str:
+    token = make_image_token(image_id, session_id)
+    return f"/api/chat/images/{image_id}?session_id={session_id}&token={token}"
 
 def create_mongo_client():
     """兼容 Vercel Serverless 的 MongoDB 连接"""
@@ -161,20 +232,22 @@ async def ensure_indexes():
         (chat_messages_collection, [("session_id", 1), ("created_at", 1)], {}),
         (chat_messages_collection, "created_at_dt", {"expireAfterSeconds": CHAT_RETENTION_SECONDS}),
         (chat_messages_collection, "message_id", {"unique": True}),
+        (db.rate_limits, [("key", 1), ("window_start", 1)], {"unique": True}),
+        (db.rate_limits, "expires_at", {"expireAfterSeconds": 0}),
     ]
     for collection, keys, opts in specs:
         try:
             await collection.create_index(keys, **opts)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("create_index failed for %s %s: %s", getattr(collection, "name", collection), keys, e)
     try:
         await chat_messages_collection.create_index(
             [("session_id", 1), ("client_message_id", 1)],
             unique=True,
             partialFilterExpression={"client_message_id": {"$exists": True, "$type": "string"}},
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("create_index failed for client_message_id: %s", e)
     _indexes_ready = True
 
 async def safe_find_one(collection, query, projection=None):
@@ -205,7 +278,12 @@ IMAGE_TYPE_ERROR_DETAIL = "IMAGE_TYPE_NOT_SUPPORTED"
 
 security = HTTPBearer()
 
+def require_jwt_secret():
+    if not JWT_SECRET:
+        raise HTTPException(status_code=503, detail="JWT_SECRET_NOT_CONFIGURED")
+
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    require_jwt_secret()
     token = credentials.credentials
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
@@ -221,7 +299,12 @@ class PublicConfig(BaseModel):
 
 class AdminConfig(PublicConfig):
     adminPath: str = DEFAULT_ADMIN_PATH
-    adminPassword: str = DEFAULT_ADMIN_PASSWORD
+    adminPassword: str = ""
+    passwordSet: bool = False
+
+class AdminConfigUpdate(PublicConfig):
+    adminPath: str = DEFAULT_ADMIN_PATH
+    adminPassword: str = Field(default="", description="Leave empty to keep current password")
 
 class LoginRequest(BaseModel):
     password: str
@@ -293,22 +376,102 @@ def require_valid_ip(value: str) -> str:
         raise HTTPException(status_code=400, detail="INVALID_IP_FORMAT")
     return ip
 
-def is_rate_limited(ip: str) -> bool:
-    now = time.time()
-    starts = _login_attempts.get(ip, [])
-    starts = [ts for ts in starts if now - ts <= LOGIN_RATE_LIMIT_WINDOW_SECONDS]
-    _login_attempts[ip] = starts
-    return len(starts) >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS
+async def check_rate_limit(key: str, max_attempts: int, window_seconds: int, *, increment: bool = True) -> bool:
+    """Return True if rate limited. Persisted in MongoDB for serverless."""
+    ensure_mongo_context()
+    now = datetime.utcnow()
+    window_start = now.replace(second=0, microsecond=0)
+    bucket_minutes = max(1, window_seconds // 60)
+    minute = (window_start.minute // bucket_minutes) * bucket_minutes
+    window_start = window_start.replace(minute=minute)
+    expires_at = window_start + timedelta(seconds=window_seconds * 2)
+    try:
+        if increment:
+            result = await db.rate_limits.find_one_and_update(
+                {"key": key, "window_start": window_start},
+                {
+                    "$inc": {"count": 1},
+                    "$setOnInsert": {"expires_at": expires_at},
+                },
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+            count = (result or {}).get("count", 1)
+        else:
+            result = await db.rate_limits.find_one({"key": key, "window_start": window_start})
+            count = (result or {}).get("count", 0)
+        return count >= max_attempts if not increment else count > max_attempts
+    except Exception as e:
+        logger.warning("rate_limit check failed for %s: %s", key, e)
+        return False
 
-def register_login_attempt(ip: str):
-    now = time.time()
-    starts = _login_attempts.get(ip, [])
-    starts = [ts for ts in starts if now - ts <= LOGIN_RATE_LIMIT_WINDOW_SECONDS]
-    starts.append(now)
-    _login_attempts[ip] = starts
+async def is_login_rate_limited(ip: str) -> bool:
+    return await check_rate_limit(
+        f"login:{ip}",
+        LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+        LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        increment=False,
+    )
 
-def clear_login_attempts(ip: str):
-    _login_attempts.pop(ip, None)
+async def register_login_attempt(ip: str):
+    await check_rate_limit(
+        f"login:{ip}",
+        LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+        LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        increment=True,
+    )
+
+async def clear_login_attempts(ip: str):
+    ensure_mongo_context()
+    try:
+        await db.rate_limits.delete_many({"key": f"login:{ip}"})
+    except Exception as e:
+        logger.warning("clear_login_attempts failed: %s", e)
+
+async def enforce_chat_rate_limit(request: Request):
+    ip = get_client_ip(request) or "unknown"
+    limited = await check_rate_limit(
+        f"chat:{ip}",
+        CHAT_RATE_LIMIT_MAX_REQUESTS,
+        CHAT_RATE_LIMIT_WINDOW_SECONDS,
+        increment=True,
+    )
+    if limited:
+        raise HTTPException(status_code=429, detail="RATE_LIMITED")
+
+def normalize_phone_digits(phone: str) -> str:
+    cleaned = re.sub(r"[\s\-()]", "", (phone or "").strip())
+    if cleaned.startswith("+972"):
+        cleaned = "0" + cleaned[4:]
+    elif cleaned.startswith("972"):
+        cleaned = "0" + cleaned[3:]
+    return cleaned
+
+async def assert_visitor_session_access(
+    session_id: str,
+    visitor_phone: str = "",
+    *,
+    require_existing: bool = True,
+) -> Optional[dict]:
+    """Bind visitor reads/writes to session_id + registered phone."""
+    session_id = (session_id or "").strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="SESSION_ID_REQUIRED")
+    session = await chat_sessions_collection.find_one({"session_id": session_id}, {"_id": 0})
+    if not session:
+        if require_existing:
+            raise HTTPException(status_code=404, detail="SESSION_NOT_FOUND")
+        return None
+    stored_phone = normalize_phone_digits(session.get("visitor_phone") or "")
+    provided = normalize_phone_digits(visitor_phone)
+    if not stored_phone:
+        raise HTTPException(status_code=403, detail="SESSION_ACCESS_DENIED")
+    if not provided or not hmac.compare_digest(stored_phone, provided):
+        raise HTTPException(status_code=403, detail="SESSION_ACCESS_DENIED")
+    return session
+
+def visitor_phone_from_request(request: Request, explicit: str = "") -> str:
+    return (explicit or request.headers.get("X-Visitor-Phone") or request.query_params.get("visitor_phone") or "").strip()
 
 ACCESS_DENIED_HK_DETAIL = "ACCESS_DENIED_REGION"
 
@@ -432,7 +595,7 @@ async def cleanup_expired_chat_data():
     cutoff_dt = datetime.utcnow() - timedelta(hours=CHAT_RETENTION_HOURS)
     cutoff_iso = cutoff_dt.isoformat()
 
-    # 先清理过期图片文件，避免消息已删后拿不到 image_id 造成残留
+    # Clean GridFS images before deleting messages (avoid orphans)
     old_img_msgs = await chat_messages_collection.find(
         {"type": "image", "created_at_dt": {"$lt": cutoff_dt}},
         {"image_id": 1}
@@ -445,10 +608,24 @@ async def cleanup_expired_chat_data():
     for image_id in image_ids:
         try:
             await delete_image_by_name(image_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("delete expired image %s failed: %s", image_id, e)
 
     await chat_messages_collection.delete_many({"created_at_dt": {"$lt": cutoff_dt}})
+
+    # Also purge orphan GridFS files older than retention
+    try:
+        old_files = await db["chat_images.files"].find(
+            {"uploadDate": {"$lt": cutoff_dt}},
+            {"_id": 1, "filename": 1},
+        ).to_list(length=2000)
+        for f in old_files:
+            try:
+                await chat_images_fs.delete(f["_id"])
+            except Exception as e:
+                logger.warning("orphan GridFS delete failed: %s", e)
+    except Exception as e:
+        logger.warning("orphan GridFS scan failed: %s", e)
 
     stale_sessions = await chat_sessions_collection.find(
         {"last_message_at": {"$lt": cutoff_iso}},
@@ -458,8 +635,8 @@ async def cleanup_expired_chat_data():
         sid = s.get("session_id")
         if not sid:
             continue
-        has_recent = await chat_messages_collection.count_documents({"session_id": sid}, limit=1)
-        if has_recent == 0:
+        remaining = await chat_messages_collection.find_one({"session_id": sid}, {"_id": 1})
+        if remaining is None:
             await chat_sessions_collection.delete_one({"session_id": sid})
 
 async def maybe_cleanup_expired_chat_data():
@@ -475,8 +652,8 @@ async def maybe_cleanup_expired_chat_data():
             return
         try:
             await cleanup_expired_chat_data()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("cleanup_expired_chat_data failed: %s", e)
         _last_cleanup_run_at = time.time()
 
 def resolve_image_mime(filename: str, content_type: str) -> str:
@@ -599,19 +776,34 @@ async def check_admin_path(data: PathCheckRequest):
 async def admin_login(data: LoginRequest, request: Request):
     await asyncio.sleep(1.5)
     ip = get_client_ip(request)
-    if is_rate_limited(ip):
+    if await is_login_rate_limited(ip):
         raise HTTPException(status_code=429, detail="RATE_LIMITED")
+    require_jwt_secret()
     config = await get_config_doc()
-    real_password = config.get("adminPassword", DEFAULT_ADMIN_PASSWORD)
+    stored_password = config.get("adminPassword") or ""
+    if not stored_password:
+        stored_password = DEFAULT_ADMIN_PASSWORD
 
-    if IS_PRODUCTION and real_password == DEFAULT_ADMIN_PASSWORD:
-        raise HTTPException(status_code=503, detail="DEFAULT_PASSWORD_FORBIDDEN")
-    
-    if data.password != real_password:
-        register_login_attempt(ip)
+    if IS_PRODUCTION:
+        if not stored_password or stored_password == DEFAULT_ADMIN_PASSWORD or not password_is_configured(config):
+            raise HTTPException(status_code=503, detail="DEFAULT_PASSWORD_FORBIDDEN")
+
+    if not verify_password(data.password, stored_password):
+        await register_login_attempt(ip)
         raise HTTPException(status_code=401, detail="INVALID_ACCESS_KEY")
 
-    clear_login_attempts(ip)
+    # Migrate legacy plaintext password to bcrypt on successful login
+    if stored_password and not looks_like_bcrypt(stored_password):
+        try:
+            await config_collection.update_one(
+                {},
+                {"$set": {"adminPassword": hash_password(data.password)}},
+                upsert=True,
+            )
+        except Exception as e:
+            logger.warning("password hash migration failed: %s", e)
+
+    await clear_login_attempts(ip)
     token = jwt.encode({"sub": "admin", "exp": datetime.utcnow() + timedelta(hours=24)}, JWT_SECRET, algorithm="HS256")
     return {"token": token}
 
@@ -621,12 +813,6 @@ async def health_check():
     return {
         "status": "ok" if db_ok else "degraded",
         "database": "connected" if db_ok else "disconnected",
-        "mongo_configured": bool(os.environ.get("MONGO_URL") or os.environ.get("MONGODB_URI")),
-        "error": _last_db_error if not db_ok else None,
-        "hint": (
-            "Add 0.0.0.0/0 in MongoDB Atlas Network Access for Vercel"
-            if not db_ok else None
-        ),
     }
 
 @app.get("/api/config")
@@ -641,31 +827,43 @@ async def get_public_config():
 @app.get("/api/admin/config")
 async def get_admin_config(token_data: dict = Depends(verify_token)):
     config = await get_config_doc()
-    return AdminConfig(
-        buyRate=config.get("buyRate", 4.4),
-        sellRate=config.get("sellRate", 3.3),
-        whatsappLink=config.get("whatsappLink", "https://wa.me/972552452669"),
-        adminPath=resolve_admin_path(config),
-        adminPassword=config.get("adminPassword", DEFAULT_ADMIN_PASSWORD)
-    )
+    return {
+        "buyRate": config.get("buyRate", 4.4),
+        "sellRate": config.get("sellRate", 3.3),
+        "whatsappLink": config.get("whatsappLink", "https://wa.me/972552452669"),
+        "adminPath": resolve_admin_path(config),
+        "adminPassword": "",
+        "passwordSet": password_is_configured(config),
+    }
 
 @app.post("/api/admin/config")
-async def update_admin_config(config: AdminConfig, token_data: dict = Depends(verify_token)):
+async def update_admin_config(config: AdminConfigUpdate, token_data: dict = Depends(verify_token)):
     config_data = config.model_dump() if hasattr(config, 'model_dump') else config.dict()
     new_path = config_data["adminPath"]
     if not new_path.startswith("/"):
         new_path = "/" + new_path
-        
+
     forbidden_prefixes = ["/api", "/static", "/frontend"]
     for fp in forbidden_prefixes:
         if new_path.startswith(fp) or new_path == "/":
             raise HTTPException(status_code=400, detail="RESERVED_ADMIN_PATH")
-            
-    if len(config_data["adminPassword"]) < 6:
-        raise HTTPException(status_code=400, detail="PASSWORD_TOO_SHORT")
-            
+
+    existing = await get_config_doc()
+    plain_password = (config_data.get("adminPassword") or "").strip()
+    if plain_password:
+        if len(plain_password) < 6:
+            raise HTTPException(status_code=400, detail="PASSWORD_TOO_SHORT")
+        if plain_password == DEFAULT_ADMIN_PASSWORD and IS_PRODUCTION:
+            raise HTTPException(status_code=400, detail="DEFAULT_PASSWORD_FORBIDDEN")
+        config_data["adminPassword"] = hash_password(plain_password)
+    else:
+        # Keep existing hashed/plaintext password
+        if existing.get("adminPassword"):
+            config_data["adminPassword"] = existing["adminPassword"]
+        else:
+            raise HTTPException(status_code=400, detail="PASSWORD_TOO_SHORT")
+
     config_data["adminPath"] = new_path
-        
     await config_collection.update_one({}, {"$set": config_data}, upsert=True)
     return {"message": "CONFIG_SAVED"}
 
@@ -724,18 +922,17 @@ async def remove_blacklist_ip(ip: str, token_data: dict = Depends(verify_token))
 # ==========================================
 
 def validate_israeli_phone(phone: str) -> str:
-    cleaned = re.sub(r"[\s\-()]", "", phone.strip())
-    if cleaned.startswith("+972"):
-        cleaned = "0" + cleaned[4:]
-    elif cleaned.startswith("972"):
-        cleaned = "0" + cleaned[3:]
+    cleaned = normalize_phone_digits(phone)
     if not re.match(r"^05\d{8}$", cleaned):
         raise HTTPException(status_code=400, detail="INVALID_ISRAELI_PHONE")
     return cleaned
 
-def serialize_message(doc: dict) -> dict:
+def serialize_message(doc: dict, session_id: str = "") -> dict:
     msg = {k: v for k, v in doc.items() if k not in {"_id", "created_at_dt"}}
-    if msg.get("image_id"):
+    sid = session_id or msg.get("session_id") or ""
+    if msg.get("image_id") and sid:
+        msg["image_url"] = signed_image_url(msg["image_id"], sid)
+    elif msg.get("image_id"):
         msg["image_url"] = f"/api/chat/images/{msg['image_id']}"
     return msg
 
@@ -819,6 +1016,7 @@ async def delete_image_by_name(image_id: str):
             await chat_images_fs.delete(f._id)
 
 async def get_image_by_id(image_id: str):
+    """Returns (data, mime, filename, session_id) or (None, None, None, None)."""
     ensure_mongo_context()
     try:
         file_doc = await db["chat_images.files"].find_one(
@@ -826,7 +1024,7 @@ async def get_image_by_id(image_id: str):
             sort=[("uploadDate", -1)],
         )
         if not file_doc:
-            return None, None, None
+            return None, None, None, None
         stream = await chat_images_fs.open_download_stream(file_doc["_id"])
         data = await stream.read()
         stream_meta = getattr(stream, "metadata", {}) or {}
@@ -837,9 +1035,10 @@ async def get_image_by_id(image_id: str):
             or "image/jpeg"
         )
         filename = file_meta.get("filename") or stream_meta.get("filename") or "image"
-        return data, mime, filename
+        session_id = file_meta.get("session_id") or stream_meta.get("session_id") or ""
+        return data, mime, filename, session_id
     except Exception:
-        return None, None, None
+        return None, None, None, None
 
 async def create_message_record(
     session_id: str,
@@ -858,7 +1057,7 @@ async def create_message_record(
             {"_id": 0},
         )
         if existing:
-            return serialize_message(existing)
+            return serialize_message(existing, session_id)
 
     now = datetime.utcnow().isoformat()
     message_id = str(uuid.uuid4())
@@ -891,7 +1090,7 @@ async def create_message_record(
                 {"_id": 0},
             )
             if existing:
-                return serialize_message(existing)
+                return serialize_message(existing, session_id)
         raise
     inc_field = "unread_admin" if sender == "visitor" else "unread_visitor"
     await chat_sessions_collection.update_one(
@@ -901,7 +1100,7 @@ async def create_message_record(
             "$inc": {inc_field: 1},
             "$setOnInsert": {
                 "session_id": session_id,
-                    "visitor_name": "Guest",
+                "visitor_name": "Guest",
                 "visitor_phone": "",
                 "visitor_ip": "",
                 "created_at": now,
@@ -909,7 +1108,7 @@ async def create_message_record(
         },
         upsert=True,
     )
-    return serialize_message(message)
+    return serialize_message(message, session_id)
 
 async def create_image_message_record(
     session_id: str,
@@ -967,10 +1166,11 @@ async def create_or_get_chat_session(
     background_tasks: BackgroundTasks,
 ):
     ensure_mongo_context()
+    await enforce_chat_rate_limit(request)
     try:
         session_id = data.session_id.strip()
         if not session_id:
-            raise HTTPException(status_code=400, detail="session_id is required")
+            raise HTTPException(status_code=400, detail="SESSION_ID_REQUIRED")
 
         visitor_name = data.visitor_name.strip()
         if not visitor_name or len(visitor_name) < 2:
@@ -978,6 +1178,13 @@ async def create_or_get_chat_session(
 
         visitor_phone = validate_israeli_phone(data.visitor_phone)
         ip = get_client_ip(request)
+
+        # If session already exists, require matching phone (prevent hijack)
+        existing = await chat_sessions_collection.find_one({"session_id": session_id}, {"_id": 0})
+        if existing:
+            stored = normalize_phone_digits(existing.get("visitor_phone") or "")
+            if stored and not hmac.compare_digest(stored, visitor_phone):
+                raise HTTPException(status_code=403, detail="SESSION_ACCESS_DENIED")
 
         session, is_new = await ensure_session(session_id, visitor_name, visitor_phone, ip)
         if not session:
@@ -994,18 +1201,23 @@ async def create_or_get_chat_session(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         if not os.environ.get("MONGO_URL"):
             raise HTTPException(status_code=503, detail="DB_NOT_CONFIGURED")
         raise HTTPException(status_code=503, detail="DB_CONNECTION_FAILED")
 
 @app.get("/api/chat/sync")
-async def sync_visitor_chat(session_id: str = Query(...)):
+async def sync_visitor_chat(
+    request: Request,
+    session_id: str = Query(...),
+    visitor_phone: str = Query(""),
+):
     """访客打开网站时同步未读消息（不重置未读数）"""
     ensure_mongo_context()
-    session = await chat_sessions_collection.find_one({"session_id": session_id}, {"_id": 0})
+    phone = visitor_phone_from_request(request, visitor_phone)
+    session = await assert_visitor_session_access(session_id, phone, require_existing=True)
     cursor = chat_messages_collection.find({"session_id": session_id}, {"_id": 0}).sort("created_at", 1)
-    messages = [serialize_message(m) for m in await cursor.to_list(length=2000)]
+    messages = [serialize_message(m, session_id) for m in await cursor.to_list(length=2000)]
     return {
         "unread_visitor": session.get("unread_visitor", 0) if session else 0,
         "messages": messages,
@@ -1013,16 +1225,21 @@ async def sync_visitor_chat(session_id: str = Query(...)):
 
 @app.get("/api/chat/messages")
 async def get_visitor_messages(
+    request: Request,
     session_id: str = Query(...),
     since: str = Query(None),
+    visitor_phone: str = Query(""),
 ):
     ensure_mongo_context()
+    await enforce_chat_rate_limit(request)
+    phone = visitor_phone_from_request(request, visitor_phone)
+    await assert_visitor_session_access(session_id, phone, require_existing=True)
     query = {"session_id": session_id}
     if since:
         query["created_at"] = {"$gt": since}
 
     cursor = chat_messages_collection.find(query, {"_id": 0}).sort("created_at", 1)
-    messages = [serialize_message(m) for m in await cursor.to_list(length=2000)]
+    messages = [serialize_message(m, session_id) for m in await cursor.to_list(length=2000)]
 
     await chat_sessions_collection.update_one(
         {"session_id": session_id},
@@ -1038,6 +1255,7 @@ async def send_visitor_message(
     background_tasks: BackgroundTasks,
 ):
     ensure_mongo_context()
+    await enforce_chat_rate_limit(request)
     content = data.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="MESSAGE_EMPTY")
@@ -1055,6 +1273,7 @@ async def send_visitor_message(
             raise HTTPException(status_code=400, detail="REGISTRATION_REQUIRED")
         session, _ = await ensure_session(session_id, visitor_name, visitor_phone, ip)
     else:
+        await assert_visitor_session_access(session_id, visitor_phone or visitor_phone_from_request(request), require_existing=True)
         visitor_name = visitor_name or session.get("visitor_name", "")
         visitor_phone = visitor_phone or session.get("visitor_phone", "")
 
@@ -1081,6 +1300,7 @@ async def upload_visitor_image(
     client_message_id: str = Form(""),
 ):
     ensure_mongo_context()
+    await enforce_chat_rate_limit(request)
     file_bytes, mime_type = await read_and_validate_image(file)
 
     session_id = session_id.strip()
@@ -1094,6 +1314,7 @@ async def upload_visitor_image(
             raise HTTPException(status_code=400, detail="REGISTRATION_REQUIRED")
         session, _ = await ensure_session(session_id, vname, vphone, ip)
     else:
+        await assert_visitor_session_access(session_id, vphone or visitor_phone_from_request(request), require_existing=True)
         vname = vname or session.get("visitor_name", "")
         vphone = vphone or session.get("visitor_phone", "")
 
@@ -1113,11 +1334,33 @@ async def upload_visitor_image(
     return {"message": message}
 
 @app.get("/api/chat/images/{image_id}")
-async def serve_chat_image(image_id: str):
+async def serve_chat_image(
+    request: Request,
+    image_id: str,
+    session_id: str = Query(""),
+    token: str = Query(""),
+):
     ensure_mongo_context()
-    data, mime, filename = await get_image_by_id(image_id)
+    data, mime, filename, img_session = await get_image_by_id(image_id)
     if not data:
         raise HTTPException(status_code=404, detail="IMAGE_NOT_FOUND")
+
+    # Prefer short-lived signed URL; also allow admin JWT
+    authorized = False
+    auth_header = request.headers.get("Authorization") or ""
+    if auth_header.startswith("Bearer ") and JWT_SECRET:
+        try:
+            jwt.decode(auth_header[7:], JWT_SECRET, algorithms=["HS256"])
+            authorized = True
+        except Exception:
+            authorized = False
+    if not authorized:
+        sid = (session_id or img_session or "").strip()
+        if not sid or not token or not verify_image_token(image_id, sid, token):
+            raise HTTPException(status_code=403, detail="IMAGE_ACCESS_DENIED")
+        if img_session and sid != img_session:
+            raise HTTPException(status_code=403, detail="IMAGE_ACCESS_DENIED")
+
     safe_name = "image.jpg"
     if filename and all(ord(c) < 128 for c in filename):
         safe_name = filename.replace('"', "")
@@ -1126,7 +1369,7 @@ async def serve_chat_image(image_id: str):
         media_type=mime,
         headers={
             "Content-Disposition": f'inline; filename="{safe_name}"',
-            "Cache-Control": "public, max-age=86400",
+            "Cache-Control": "private, max-age=300",
             "Accept-Ranges": "bytes",
         },
     )
@@ -1162,7 +1405,7 @@ async def get_admin_session_messages(
         query["created_at"] = {"$gt": since}
 
     cursor = chat_messages_collection.find(query, {"_id": 0}).sort("created_at", 1)
-    messages = [serialize_message(m) for m in await cursor.to_list(length=2000)]
+    messages = [serialize_message(m, session_id) for m in await cursor.to_list(length=2000)]
 
     await chat_sessions_collection.update_one(
         {"session_id": session_id},

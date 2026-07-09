@@ -77,7 +77,7 @@ const Reviews = () => {
                 </div>
                 <div>
                   <div className="text-white font-semibold">{review.name}</div>
-                  <div className="text-gray-500 text-sm">Verified Customer</div>
+                  <div className="text-gray-500 text-sm">{t.reviews.verifiedCustomer}</div>
                 </div>
               </div>
             </div>

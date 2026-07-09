@@ -129,6 +129,18 @@ export const getApiErrorMessage = (err, fallback = 'Request failed', t = null) =
   return t?.errors?.requestFailed || fallback;
 };
 
+export const visitorChatHeaders = (phone) => {
+  const headers = {};
+  if (phone) headers['X-Visitor-Phone'] = phone;
+  return headers;
+};
+
+export const visitorChatParams = (sessionId, phone, extra = {}) => {
+  const params = { session_id: sessionId, ...extra };
+  if (phone) params.visitor_phone = phone;
+  return params;
+};
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const retryRequest = async (fn, retries = 3, baseDelay = 400) => {

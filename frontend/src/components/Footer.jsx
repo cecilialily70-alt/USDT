@@ -40,7 +40,7 @@ const Footer = () => {
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/50">
                 <span className="text-white font-bold text-xl">₪</span>
               </div>
-              <span className="gradient-text font-bold text-xl">Exchange</span>
+              <span className="gradient-text font-bold text-xl">{t.footer.brand}</span>
             </div>
           <p className="text-gray-400">{t.footer.description}</p>
           </div>
@@ -66,13 +66,13 @@ const Footer = () => {
           <div>
           <h3 className="text-white font-semibold mb-4">{t.footer.legalTitle}</h3>
             <div className="flex flex-col gap-2">
-              <a href="#" className="text-gray-400 hover:text-[#26A17B] transition-colors">
+              <a href="/terms" className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.footer.terms}
               </a>
-              <a href="#" className="text-gray-400 hover:text-[#26A17B] transition-colors">
+              <a href="/privacy" className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.footer.privacy}
               </a>
-              <a href="#" className="text-gray-400 hover:text-[#26A17B] transition-colors">
+              <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.footer.contact}
               </a>
             </div>
@@ -80,7 +80,7 @@ const Footer = () => {
         </div>
 
         <div className="pt-8 border-t border-white/10 text-center text-gray-500">
-          <p>© {currentYear} Exchange. {t.footer.rights}</p>
+          <p>© {currentYear} {t.footer.brand}. {t.footer.rights}</p>
         </div>
       </div>
 

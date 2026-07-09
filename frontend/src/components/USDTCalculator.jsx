@@ -41,8 +41,8 @@ const USDTCalculator = () => {
 
   const calculateExchange = () => {
     if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
-      toast('Invalid Amount', {
-        description: 'Please enter a valid amount greater than 0',
+      toast(t.calculator.invalidAmount || t.tradeModal.errorTitle, {
+        description: t.calculator.invalidAmountDesc || t.tradeModal.errorAmount,
       });
       return;
     }
@@ -72,8 +72,8 @@ const USDTCalculator = () => {
       type: activeTab
     });
 
-    toast('Calculation Complete', {
-      description: 'Exchange rate calculated successfully',
+    toast(t.calculator.calcComplete, {
+      description: t.calculator.calcCompleteDesc,
     });
   };
 

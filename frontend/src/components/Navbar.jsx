@@ -32,7 +32,7 @@ const Navbar = () => {
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/50 animate-glow">
               <span className="text-white font-bold text-xl">₪</span>
             </div>
-            <span className="gradient-text font-bold text-xl">Exchange</span>
+            <span className="gradient-text font-bold text-xl">{t.navbar.brand}</span>
           </div>
 
           <div className="hidden md:flex items-center gap-8">
