@@ -1118,10 +1118,17 @@ async def serve_chat_image(image_id: str):
     data, mime, filename = await get_image_by_id(image_id)
     if not data:
         raise HTTPException(status_code=404, detail="图片不存在")
+    safe_name = "image.jpg"
+    if filename and all(ord(c) < 128 for c in filename):
+        safe_name = filename.replace('"', "")
     return Response(
         content=data,
         media_type=mime,
-        headers={"Content-Disposition": f'inline; filename="{filename}"', "Cache-Control": "public, max-age=31536000"},
+        headers={
+            "Content-Disposition": f'inline; filename="{safe_name}"',
+            "Cache-Control": "public, max-age=86400",
+            "Accept-Ranges": "bytes",
+        },
     )
 
 @app.get("/api/admin/chat/sessions")

@@ -85,7 +85,13 @@ export const formatChatTime = (iso, withDate = false) => {
   }
 };
 
-export const createClientMessageId = () => crypto.randomUUID();
+export const resolveChatImageUrl = (imageUrl) => {
+  if (!imageUrl) return '';
+  if (/^(https?:|blob:|data:)/i.test(imageUrl)) return imageUrl;
+  if (typeof window === 'undefined') return imageUrl;
+  const path = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
+  return `${window.location.origin}${path}`;
+};
 
 export const getApiErrorMessage = (err, fallback = 'Request failed') => {
   if (!err?.response) return fallback;

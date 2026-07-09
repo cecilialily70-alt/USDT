@@ -1,12 +1,28 @@
-import React, { useState } from 'react';
-import { formatChatTime } from '../utils/chatHelpers';
+import React, { useState, useMemo } from 'react';
+import { formatChatTime, resolveChatImageUrl } from '../utils/chatHelpers';
 import { Loader2, AlertCircle, ImageIcon } from 'lucide-react';
 
 const ChatMessageBubble = ({ msg, isOwn }) => {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const isPending = msg.status === 'pending';
   const isFailed = msg.status === 'failed';
+
+  const imageSrc = useMemo(() => {
+    if (!msg.image_url) return '';
+    const base = resolveChatImageUrl(msg.image_url);
+    return retryCount > 0 ? `${base}${base.includes('?') ? '&' : '?'}r=${retryCount}` : base;
+  }, [msg.image_url, retryCount]);
+
+  const handleImageError = () => {
+    if (retryCount < 2) {
+      setRetryCount((n) => n + 1);
+      setImgLoaded(false);
+      return;
+    }
+    setImgError(true);
+  };
 
   const ownClass = msg.sender === 'admin'
     ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-ee-sm'
@@ -17,7 +33,7 @@ const ChatMessageBubble = ({ msg, isOwn }) => {
   return (
     <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
       <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm relative ${cls} ${isPending ? 'opacity-70' : ''} ${isFailed ? 'border border-red-500/50' : ''}`}>
-        {msg.type === 'image' && msg.image_url && (
+        {msg.type === 'image' && imageSrc && (
           <div className="mb-1">
             {!imgLoaded && !imgError && (
               <div className="w-48 h-32 bg-black/20 rounded-lg flex items-center justify-center">
@@ -25,21 +41,23 @@ const ChatMessageBubble = ({ msg, isOwn }) => {
               </div>
             )}
             {!imgError ? (
-              <a href={msg.image_url} target="_blank" rel="noopener noreferrer">
+              <a href={imageSrc} target="_blank" rel="noopener noreferrer">
                 <img
-                  src={msg.image_url}
+                  src={imageSrc}
                   alt={msg.filename || 'image'}
                   className={`max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity ${imgLoaded ? '' : 'hidden'}`}
                   style={{ maxHeight: '300px' }}
+                  loading="eager"
+                  decoding="async"
                   onLoad={() => setImgLoaded(true)}
-                  onError={() => setImgError(true)}
+                  onError={handleImageError}
                 />
               </a>
             ) : (
               <div className="text-xs opacity-70 space-y-1">
                 <p>Image failed to load</p>
                 <a
-                  href={msg.image_url}
+                  href={imageSrc}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline"
