@@ -93,6 +93,8 @@ export const resolveChatImageUrl = (imageUrl) => {
   return `${window.location.origin}${path}`;
 };
 
+export const createClientMessageId = () => crypto.randomUUID();
+
 export const getApiErrorMessage = (err, fallback = 'Request failed') => {
   if (!err?.response) return fallback;
   const detail = err.response.data?.detail;
