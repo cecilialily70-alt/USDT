@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useLanguage } from '../contexts/LanguageContext';
 import { X, Download, Copy, ZoomIn, ZoomOut } from 'lucide-react';
 
 const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
+  const { t, isRTL } = useLanguage();
+  const labels = t.chat.imageViewer;
   const [zoomed, setZoomed] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const longPressTimer = useRef(null);
@@ -80,12 +83,13 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
       onClick={onClose}
       role="dialog"
       aria-modal="true"
+      dir={isRTL ? 'rtl' : 'ltr'}
     >
       <button
         type="button"
         onClick={onClose}
         className="absolute top-4 end-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
-        aria-label="Close"
+        aria-label={labels.close}
       >
         <X className="w-5 h-5" />
       </button>
@@ -97,7 +101,7 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
           setZoomed((z) => !z);
         }}
         className="absolute top-4 start-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
-        aria-label={zoomed ? 'Zoom out' : 'Zoom in'}
+        aria-label={zoomed ? labels.zoomOut : labels.zoomIn}
       >
         {zoomed ? <ZoomOut className="w-5 h-5" /> : <ZoomIn className="w-5 h-5" />}
       </button>
@@ -138,7 +142,7 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm"
           >
             <Download className="w-4 h-4" />
-            保存
+            {labels.save}
           </button>
           <button
             type="button"
@@ -146,20 +150,20 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm"
           >
             <Copy className="w-4 h-4" />
-            复制
+            {labels.copy}
           </button>
           <button
             type="button"
             onClick={() => setShowActions(false)}
             className="px-3 py-2 rounded-xl text-white/60 hover:text-white text-sm"
           >
-            取消
+            {labels.cancel}
           </button>
         </div>
       )}
 
-      <p className="absolute bottom-2 text-white/40 text-[10px] pointer-events-none">
-        点击放大 · 长按保存/复制
+      <p className="absolute bottom-2 text-white/40 text-[10px] pointer-events-none text-center px-4">
+        {labels.hint}
       </p>
     </div>
   );

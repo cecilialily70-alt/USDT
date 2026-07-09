@@ -9,7 +9,7 @@ export const SUPPORTED_IMAGE_MIME = new Set([
   'image/bmp',
 ]);
 
-export const UNSUPPORTED_IMAGE_MESSAGE = '仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持';
+export const UNSUPPORTED_IMAGE_CODE = 'IMAGE_TYPE_NOT_SUPPORTED';
 
 const IMAGE_EXT_TO_MIME = {
   jpg: 'image/jpeg',

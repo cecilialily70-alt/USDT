@@ -2,11 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import axios from 'axios';
+import { useLanguage } from '../contexts/LanguageContext';
+import { resolveApiError } from '../utils/apiErrors';
 import AdminPanel from '../pages/AdminPanel';
 
 export default function AdminOrNotFound() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [status, setStatus] = useState('checking');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -24,22 +27,22 @@ export default function AdminOrNotFound() {
       } catch (e) {
         const detail = e.response?.data?.detail;
         if (typeof detail === 'string') {
-          setErrorMsg(detail);
+          setErrorMsg(resolveApiError(detail, t, t.errors.verifyFailed));
         } else if (!e.response) {
-          setErrorMsg('无法连接服务器，请确认后端已启动');
+          setErrorMsg(t.errors.serverUnreachable);
         } else {
-          setErrorMsg('验证失败，请刷新重试');
+          setErrorMsg(t.errors.verifyFailed);
         }
         setStatus('error');
       }
     };
     checkPath();
-  }, [location.pathname]);
+  }, [location.pathname, t]);
 
   if (status === 'checking') {
     return (
       <div className="min-h-screen bg-[#06080F] flex items-center justify-center text-white">
-        Loading...
+        {t.admin.loading}
       </div>
     );
   }
@@ -61,13 +64,13 @@ export default function AdminOrNotFound() {
           onClick={() => window.location.reload()}
           className="px-6 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
         >
-          刷新重试
+          {t.admin.retry}
         </button>
         <button
           onClick={() => navigate('/')}
           className="text-gray-500 hover:text-gray-300 text-sm"
         >
-          返回首页
+          {t.admin.backHome}
         </button>
       </div>
     );

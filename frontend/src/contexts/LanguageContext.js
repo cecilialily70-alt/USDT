@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { translations } from '../i18n/translations';
+import { LOCALE_MAP } from '../utils/chatHelpers';
 
 const LanguageContext = createContext();
 
@@ -33,12 +34,14 @@ export const LanguageProvider = ({ children }) => {
   };
 
   const t = translations[currentLanguage];
+  const locale = LOCALE_MAP[currentLanguage] || 'he-IL';
 
   return (
     <LanguageContext.Provider
       value={{
         currentLanguage,
         direction,
+        locale,
         changeLanguage,
         t,
         isRTL: direction === 'rtl'

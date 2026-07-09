@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
+import { useLanguage } from '../contexts/LanguageContext';
 import { formatChatTime, resolveChatImageUrl } from '../utils/chatHelpers';
 import { Loader2, AlertCircle, ImageIcon } from 'lucide-react';
 import ChatImageViewer from './ChatImageViewer';
 
 const ChatMessageBubble = ({ msg, isOwn }) => {
+  const { t, locale } = useLanguage();
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
@@ -27,15 +29,17 @@ const ChatMessageBubble = ({ msg, isOwn }) => {
   };
 
   const ownClass = msg.sender === 'admin'
-    ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-ee-sm'
-    : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-ee-sm';
-  const otherClass = 'bg-white/10 text-gray-100 rounded-es-sm';
+    ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-ee-sm rtl:rounded-es-sm'
+    : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-ee-sm rtl:rounded-es-sm';
+  const otherClass = 'bg-white/10 text-gray-100 rounded-es-sm rtl:rounded-ee-sm';
   const cls = isOwn ? ownClass : otherClass;
 
   return (
     <>
-      <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
-        <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm relative ${cls} ${isPending ? 'opacity-70' : ''} ${isFailed ? 'border border-red-500/50' : ''}`}>
+      <div className="flex w-full">
+        <div
+          className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm relative ${cls} ${isOwn ? 'ms-auto' : 'me-auto'} ${isPending ? 'opacity-70' : ''} ${isFailed ? 'border border-red-500/50' : ''}`}
+        >
           {msg.type === 'image' && imageSrc && (
             <div className="mb-1">
               {!imgLoaded && !imgError && (
@@ -63,23 +67,27 @@ const ChatMessageBubble = ({ msg, isOwn }) => {
                 </button>
               ) : (
                 <div className="text-xs opacity-70 space-y-1">
-                  <p>Image failed to load</p>
+                  <p>{t.chat.imageLoadFailed}</p>
                   <button
                     type="button"
-                    className="underline text-left"
+                    className="underline"
                     onClick={() => setViewerOpen(true)}
                   >
-                    重试查看
+                    {t.chat.imageRetry}
                   </button>
                 </div>
               )}
             </div>
           )}
           {msg.content && (
-            <p className="break-words whitespace-pre-wrap">{msg.content}</p>
+            <p className="break-words whitespace-pre-wrap" dir="auto">
+              {msg.content}
+            </p>
           )}
           <div className={`flex items-center gap-1 mt-1 ${isOwn ? 'text-white/60' : 'text-gray-500'}`}>
-            <p className="text-[10px]">{formatChatTime(msg.created_at)}</p>
+            <p className="text-[10px]" dir="ltr">
+              {formatChatTime(msg.created_at, false, locale)}
+            </p>
             {isPending && <Loader2 className="w-3 h-3 animate-spin" />}
             {isFailed && <AlertCircle className="w-3 h-3 text-red-400" />}
           </div>

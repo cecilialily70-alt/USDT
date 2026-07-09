@@ -10,11 +10,15 @@ import AdminChat from '../components/AdminChat';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import axios from 'axios';
+import { getApiErrorMessage } from '../utils/chatHelpers';
 
 const API = '/api';
 
 const AdminPanel = () => {
   const { t } = useLanguage();
+  const at = t.admin;
+  const att = t.admin.toast;
+  const al = t.admin.login;
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState({
@@ -81,12 +85,12 @@ const AdminPanel = () => {
       await axios.post(`${API}/admin/config`, config, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      toast.success('Settings Saved', {
-        description: 'Configuration updated successfully!',
+      toast.success(att.settingsSaved, {
+        description: att.settingsSavedDesc,
       });
       
       if (window.location.pathname !== config.adminPath) {
-         toast.info('URL Changed. Redirecting to new Admin Dashboard...');
+         toast.info(att.urlChanged);
          setTimeout(() => {
              window.location.href = config.adminPath;
          }, 2000);
@@ -95,9 +99,11 @@ const AdminPanel = () => {
       if (error.response?.status === 401) {
         localStorage.removeItem('admin_token');
         setIsAuthenticated(false);
-        toast.error('Session Expired', { description: 'Please log in again.' });
+        toast.error(att.sessionExpired, { description: att.sessionExpiredDesc });
       } else {
-        toast.error('Save Failed', { description: error.response?.data?.detail || "Connection Error" });
+        toast.error(att.saveFailed, {
+          description: getApiErrorMessage(error, att.connectionError, t),
+        });
       }
     } finally {
       setLoading(false);
@@ -111,11 +117,11 @@ const AdminPanel = () => {
       await axios.post(`${API}/admin/whitelist`, { ip: newIp.trim() }, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
-      toast.success('IP Added to Whitelist');
+      toast.success(att.ipAdded);
       setNewIp('');
       fetchWhitelist();
     } catch (e) {
-      toast.error('Failed to add IP');
+      toast.error(att.ipAddFailed);
     }
   };
 
@@ -125,10 +131,10 @@ const AdminPanel = () => {
       await axios.delete(`${API}/admin/whitelist/${ip}`, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
-      toast.success('IP Removed');
+      toast.success(att.ipRemoved);
       fetchWhitelist();
     } catch (e) {
-      toast.error('Failed to remove IP');
+      toast.error(att.ipRemoveFailed);
     }
   };
 
@@ -143,9 +149,11 @@ const AdminPanel = () => {
       const response = await axios.post(`${API}/admin/login`, { password });
       localStorage.setItem('admin_token', response.data.token);
       setIsAuthenticated(true);
-      toast.success('Welcome Back', { description: 'Logged in successfully!' });
+      toast.success(al.welcome, { description: al.welcomeDesc });
     } catch (error) {
-      toast.error('Login Failed', { description: error.response?.data?.detail || 'Invalid Access Key' });
+      toast.error(al.failed, {
+        description: getApiErrorMessage(error, t.errors.invalidAccessKey, t),
+      });
       setPassword('');
     } finally {
       setLoading(false);
@@ -168,7 +176,7 @@ const AdminPanel = () => {
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleLogin(e)}
               className="w-full bg-[#0a0e1a]/80 border border-white/10 focus:border-purple-500 rounded-xl px-4 py-4 text-center text-white text-xl tracking-[0.2em] outline-none transition-all duration-300 placeholder:tracking-normal placeholder:text-gray-600 disabled:opacity-50"
-              placeholder={loading ? "Verifying..." : "Enter Access Key"}
+              placeholder={loading ? al.verifying : al.placeholder}
               autoFocus
             />
         </div>
@@ -182,10 +190,10 @@ const AdminPanel = () => {
         <div className="mb-8">
           <Button onClick={() => navigate('/')} variant="ghost" className="text-gray-300 hover:text-white hover:bg-white/10 mb-4 -ms-4 transition-all duration-300">
             <ArrowLeft className="w-4 h-4 me-2" />
-            Back to Home
+            {at.backToHome}
           </Button>
-          <h1 className="text-3xl md:text-5xl font-bold gradient-text mb-3">Admin Panel</h1>
-          <p className="text-gray-400 text-base md:text-lg">Manage exchange rates, security settings, and IP access controls</p>
+          <h1 className="text-3xl md:text-5xl font-bold gradient-text mb-3">{at.panelTitle}</h1>
+          <p className="text-gray-400 text-base md:text-lg">{at.panelSubtitle}</p>
         </div>
 
         <div className="mb-6">

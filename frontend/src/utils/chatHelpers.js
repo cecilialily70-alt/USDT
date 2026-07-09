@@ -1,3 +1,5 @@
+import { resolveApiError } from './apiErrors';
+
 const PENDING_KEY = 'chat_pending_messages';
 
 export const mergeMessages = (prev, incoming) => {
@@ -69,17 +71,34 @@ export const removePendingMessage = (sessionId, clientMessageId) => {
 };
 
 export const validateIsraeliPhone = (phone) => {
-  let cleaned = phone.replace(/[\s\-()]/g, '').trim();
+  let cleaned = phone.replace(/[\s\-().]/g, '').trim();
   if (cleaned.startsWith('+972')) cleaned = '0' + cleaned.slice(4);
   else if (cleaned.startsWith('972')) cleaned = '0' + cleaned.slice(3);
+  if (cleaned.startsWith('5') && cleaned.length <= 9) cleaned = '0' + cleaned;
   return /^05\d{8}$/.test(cleaned) ? cleaned : null;
 };
 
-export const formatChatTime = (iso, withDate = false) => {
+/** Format Israeli mobile as user types: 050-123-4567 */
+export const formatIsraeliPhoneInput = (raw) => {
+  let d = raw.replace(/\D/g, '');
+  if (d.startsWith('972')) d = '0' + d.slice(3);
+  if (d.startsWith('5') && !d.startsWith('05')) d = '0' + d;
+  if (!d.length) return '';
+  if (!d.startsWith('0') && !d.startsWith('5')) return raw.replace(/[^\d+\-\s]/g, '');
+  d = d.slice(0, 10);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}-${d.slice(3)}`;
+  return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+};
+
+export const LOCALE_MAP = { he: 'he-IL', en: 'en-IL', ar: 'ar-IL' };
+
+export const formatChatTime = (iso, withDate = false, locale = 'he-IL') => {
   try {
     const d = new Date(iso);
-    if (withDate) return d.toLocaleString();
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const opts = { hour: '2-digit', minute: '2-digit', hour12: false };
+    if (withDate) return d.toLocaleString(locale, { ...opts, day: 'numeric', month: 'short' });
+    return d.toLocaleTimeString(locale, opts);
   } catch {
     return '';
   }
@@ -95,12 +114,19 @@ export const resolveChatImageUrl = (imageUrl) => {
 
 export const createClientMessageId = () => crypto.randomUUID();
 
-export const getApiErrorMessage = (err, fallback = 'Request failed') => {
-  if (!err?.response) return fallback;
+export const getApiErrorMessage = (err, fallback = 'Request failed', t = null) => {
+  if (!err?.response) {
+    return t?.errors?.networkError || fallback;
+  }
   const detail = err.response.data?.detail;
-  if (typeof detail === 'string') return detail;
-  if (Array.isArray(detail)) return detail.map((d) => d.msg || d).join(', ');
-  return fallback;
+  if (typeof detail === 'string') {
+    return resolveApiError(detail, t, fallback);
+  }
+  if (Array.isArray(detail)) {
+    const joined = detail.map((d) => d.msg || d).join(', ');
+    return t ? resolveApiError(joined, t, fallback) : joined;
+  }
+  return t?.errors?.requestFailed || fallback;
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

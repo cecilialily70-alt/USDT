@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
@@ -10,7 +11,6 @@ import axios from 'axios';
 import { mergeMessages, createClientMessageId, formatChatTime, retryRequest, getApiErrorMessage } from '../utils/chatHelpers';
 import {
   MAX_IMAGE_SIZE_BYTES,
-  UNSUPPORTED_IMAGE_MESSAGE,
   isSupportedImageFile,
 } from '../utils/chatConstants';
 
@@ -18,6 +18,8 @@ const API = '/api';
 const POLL_INTERVAL = 2500;
 
 const AdminChat = () => {
+  const { t, locale } = useLanguage();
+  const ac = t.admin.chat;
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -110,7 +112,7 @@ const AdminChat = () => {
 
   const toggleBlacklistByIp = async (ip, blacklisted) => {
     if (!ip) {
-      toast.error('该会话缺少 visitor_ip，无法拉黑');
+      toast.error(ac.missingIp);
       return;
     }
     try {
@@ -137,7 +139,7 @@ const AdminChat = () => {
         return { ...prev, blacklisted: !blacklisted };
       });
     } catch (err) {
-      toast.error(getApiErrorMessage(err, '操作失败，请重试'));
+      toast.error(getApiErrorMessage(err, ac.operationFailed, t));
     }
   };
 
@@ -203,7 +205,7 @@ const AdminChat = () => {
       await sendTextReply(content, clientId);
     } catch (err) {
       setReply(content);
-      toast.error(getApiErrorMessage(err, '发送失败，请重试'));
+      toast.error(getApiErrorMessage(err, ac.sendFailed, t));
     } finally {
       setSending(false);
       replyInputRef.current?.focus();
@@ -216,11 +218,11 @@ const AdminChat = () => {
     e.target.value = '';
 
     if (!isSupportedImageFile(file)) {
-      toast.error(UNSUPPORTED_IMAGE_MESSAGE);
+      toast.error(t.chat.imageUnsupported);
       return;
     }
     if (file.size > MAX_IMAGE_SIZE_BYTES) {
-      toast.error('Image must be under 20MB');
+      toast.error(t.chat.imageTooLarge);
       return;
     }
 
@@ -271,7 +273,7 @@ const AdminChat = () => {
           m.client_message_id === clientId ? { ...m, status: 'failed' } : m
         )
       );
-      toast.error(getApiErrorMessage(err, '图片发送失败，请重试'));
+      toast.error(getApiErrorMessage(err, t.chat.imageUploadFailed, t));
     } finally {
       setUploading(false);
       replyInputRef.current?.focus();
@@ -280,7 +282,7 @@ const AdminChat = () => {
 
   const handleDeleteSession = async (sessionId, e) => {
     e.stopPropagation();
-    if (!window.confirm('Delete this conversation?')) return;
+    if (!window.confirm(ac.deleteConfirm)) return;
     try {
       await axios.delete(`${API}/admin/chat/sessions/${sessionId}`, {
         headers: { Authorization: `Bearer ${getToken()}` },
@@ -290,9 +292,9 @@ const AdminChat = () => {
         setMessages([]);
       }
       fetchSessions();
-      toast.success('Conversation deleted');
+      toast.success(ac.deleted);
     } catch {
-      toast.error('Failed to delete');
+      toast.error(ac.deleteFailed);
     }
   };
 
@@ -310,9 +312,9 @@ const AdminChat = () => {
       <div className="flex items-center justify-between p-6 border-b border-white/10">
         <h2 className="text-xl md:text-2xl font-bold text-white flex items-center">
           <MessageSquare className="w-6 h-6 mr-3 text-green-400" />
-          Live Chat
+          {ac.title}
           {totalUnread > 0 && (
-            <Badge className="ml-3 bg-red-500/80 text-white border-none">{totalUnread} new</Badge>
+            <Badge className="ml-3 bg-red-500/80 text-white border-none">{totalUnread} {ac.newBadge}</Badge>
           )}
         </h2>
         <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={loading} className="text-gray-400 hover:text-white">
@@ -323,12 +325,12 @@ const AdminChat = () => {
       <div className="flex flex-col md:flex-row h-[500px]">
         <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 overflow-y-auto max-h-[200px] md:max-h-none">
           <div className="p-3 border-b border-white/10 bg-black/20">
-            <p className="text-white/80 text-xs mb-2">拉黑 IP / 手动加入</p>
+            <p className="text-white/80 text-xs mb-2">{ac.blockSection}</p>
             <div className="flex gap-2 items-center">
               <Input
                 value={blacklistIpInput}
                 onChange={(e) => setBlacklistIpInput(e.target.value)}
-                placeholder="输入 IP (IPv4/IPv6)"
+                placeholder={ac.ipPlaceholder}
                 className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-xs h-9"
               />
               <Button
@@ -342,7 +344,7 @@ const AdminChat = () => {
             </div>
           </div>
           {sessions.length === 0 ? (
-            <p className="text-gray-500 text-center py-8 text-sm">No conversations yet</p>
+            <p className="text-gray-500 text-center py-8 text-sm">{ac.noConversations}</p>
           ) : (
             sessions.map((session) => (
               <button
@@ -356,7 +358,7 @@ const AdminChat = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-white font-medium text-sm truncate">
-                        {session.visitor_name || 'Guest'}
+                        {session.visitor_name || ac.guest}
                       </span>
                       {(session.unread_admin || 0) > 0 && (
                         <Badge className="bg-red-500/80 text-white border-none text-[10px] px-1.5 py-0">
@@ -366,7 +368,7 @@ const AdminChat = () => {
                     </div>
                     {(session.blacklisted) && (
                       <Badge className="bg-red-600/80 text-white border-none text-[10px] px-1.5 py-0 mr-1">
-                        Blocked
+                        {ac.blocked}
                       </Badge>
                     )}
                     {session.visitor_phone && (
@@ -375,10 +377,10 @@ const AdminChat = () => {
                       </p>
                     )}
                     <p className="text-gray-500 text-xs truncate mt-1">
-                      {session.last_message || 'No messages'}
+                      {session.last_message || ac.noMessages}
                     </p>
                     <p className="text-gray-600 text-[10px] mt-1">
-                      {session.visitor_ip} · {formatChatTime(session.last_message_at, true)}
+                      {session.visitor_ip} · {formatChatTime(session.last_message_at, true, locale)}
                     </p>
                   </div>
                   <Button
@@ -399,7 +401,7 @@ const AdminChat = () => {
                         : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10 shrink-0 ml-2'
                     }
                     onClick={(e) => handleBlacklistForSession(session, e)}
-                    title={session.blacklisted ? '解除拉黑' : '拉黑该 IP'}
+                    title={session.blacklisted ? ac.unblockTitle : ac.blockTitle}
                   >
                     <Ban className="w-3.5 h-3.5" />
                   </Button>
@@ -454,7 +456,7 @@ const AdminChat = () => {
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendReply())}
-                  placeholder="Type your reply..."
+                  placeholder={ac.replyPlaceholder}
                   disabled={sending}
                   className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"
                 />
@@ -470,7 +472,7 @@ const AdminChat = () => {
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
-              Select a conversation to start replying
+              {ac.selectConversation}
             </div>
           )}
         </div>

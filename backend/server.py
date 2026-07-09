@@ -201,7 +201,7 @@ ALLOWED_IMAGE_TYPES = {
     "image/jpeg", "image/jpg", "image/png", "image/gif",
     "image/webp", "image/bmp",
 }
-IMAGE_TYPE_ERROR_DETAIL = "仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持"
+IMAGE_TYPE_ERROR_DETAIL = "IMAGE_TYPE_NOT_SUPPORTED"
 
 security = HTTPBearer()
 
@@ -210,9 +210,9 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="登录状态已过期，请重新登录")
+        raise HTTPException(status_code=401, detail="SESSION_EXPIRED")
     except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="无效的访问凭证")
+        raise HTTPException(status_code=401, detail="INVALID_TOKEN")
 
 class PublicConfig(BaseModel):
     buyRate: float = 4.4
@@ -290,7 +290,7 @@ def require_valid_ip(value: str) -> str:
     try:
         ipaddress.ip_address(ip)
     except Exception:
-        raise HTTPException(status_code=400, detail="IP 格式无效")
+        raise HTTPException(status_code=400, detail="INVALID_IP_FORMAT")
     return ip
 
 def is_rate_limited(ip: str) -> bool:
@@ -310,7 +310,7 @@ def register_login_attempt(ip: str):
 def clear_login_attempts(ip: str):
     _login_attempts.pop(ip, None)
 
-ACCESS_DENIED_HK_DETAIL = "Access Denied: 香港地区已被拦截。"
+ACCESS_DENIED_HK_DETAIL = "ACCESS_DENIED_REGION"
 
 def get_cached_country(ip_value: str) -> str:
     cached = _country_cache.get(ip_value)
@@ -496,12 +496,12 @@ def resolve_image_mime(filename: str, content_type: str) -> str:
 async def read_and_validate_image(file: UploadFile) -> tuple[bytes, str]:
     file_bytes = await file.read()
     if len(file_bytes) == 0:
-        raise HTTPException(status_code=400, detail="文件为空")
+        raise HTTPException(status_code=400, detail="EMPTY_FILE")
     mime_type = resolve_image_mime(file.filename or "", file.content_type or "")
     if mime_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail=IMAGE_TYPE_ERROR_DETAIL)
     if len(file_bytes) > MAX_IMAGE_SIZE:
-        raise HTTPException(status_code=400, detail="图片不能超过 20MB")
+        raise HTTPException(status_code=400, detail="IMAGE_TOO_LARGE")
     return file_bytes, mime_type
 
 TELEGRAM_BOT_TOKEN = (
@@ -554,7 +554,7 @@ async def ip_block_middleware(request: Request, call_next):
                 {"_id": 0},
             )
             if blocked:
-                return JSONResponse(status_code=403, content={"detail": "你已被拉黑，无法继续聊天。"})
+                return JSONResponse(status_code=403, content={"detail": "BLACKLISTED"})
         except Exception:
             # 黑名单查询失败时 fail-open，避免误伤
             pass
@@ -600,16 +600,16 @@ async def admin_login(data: LoginRequest, request: Request):
     await asyncio.sleep(1.5)
     ip = get_client_ip(request)
     if is_rate_limited(ip):
-        raise HTTPException(status_code=429, detail="登录尝试过于频繁，请稍后再试")
+        raise HTTPException(status_code=429, detail="RATE_LIMITED")
     config = await get_config_doc()
     real_password = config.get("adminPassword", DEFAULT_ADMIN_PASSWORD)
 
     if IS_PRODUCTION and real_password == DEFAULT_ADMIN_PASSWORD:
-        raise HTTPException(status_code=503, detail="安全限制：生产环境禁止使用默认后台密码，请先修改 adminPassword")
+        raise HTTPException(status_code=503, detail="DEFAULT_PASSWORD_FORBIDDEN")
     
     if data.password != real_password:
         register_login_attempt(ip)
-        raise HTTPException(status_code=401, detail="访问密钥错误 (Invalid Access Key)")
+        raise HTTPException(status_code=401, detail="INVALID_ACCESS_KEY")
 
     clear_login_attempts(ip)
     token = jwt.encode({"sub": "admin", "exp": datetime.utcnow() + timedelta(hours=24)}, JWT_SECRET, algorithm="HS256")
@@ -624,7 +624,7 @@ async def health_check():
         "mongo_configured": bool(os.environ.get("MONGO_URL") or os.environ.get("MONGODB_URI")),
         "error": _last_db_error if not db_ok else None,
         "hint": (
-            "请在 MongoDB Atlas → Network Access 添加 0.0.0.0/0 允许 Vercel 访问"
+            "Add 0.0.0.0/0 in MongoDB Atlas Network Access for Vercel"
             if not db_ok else None
         ),
     }
@@ -659,15 +659,15 @@ async def update_admin_config(config: AdminConfig, token_data: dict = Depends(ve
     forbidden_prefixes = ["/api", "/static", "/frontend"]
     for fp in forbidden_prefixes:
         if new_path.startswith(fp) or new_path == "/":
-            raise HTTPException(status_code=400, detail=f"安全拦截：禁止使用系统保留路由 '{fp}' 作为后台地址。")
+            raise HTTPException(status_code=400, detail="RESERVED_ADMIN_PATH")
             
     if len(config_data["adminPassword"]) < 6:
-        raise HTTPException(status_code=400, detail="安全拦截：后台密码不得少于 6 个字符。")
+        raise HTTPException(status_code=400, detail="PASSWORD_TOO_SHORT")
             
     config_data["adminPath"] = new_path
         
     await config_collection.update_one({}, {"$set": config_data}, upsert=True)
-    return {"message": "配置更新成功并已生效"}
+    return {"message": "CONFIG_SAVED"}
 
 # ==========================================
 # 白名单管理 API (供后台页面调用)
@@ -686,13 +686,13 @@ async def add_whitelist_ip(data: WhitelistIP, token_data: dict = Depends(verify_
         {"$set": {"ip": valid_ip, "auto_added": False, "added_at": datetime.utcnow().isoformat(), "source": "manual"}}, 
         upsert=True
     )
-    return {"message": "IP 已成功加入白名单"}
+    return {"message": "WHITELIST_ADDED"}
 
 @app.delete("/api/admin/whitelist/{ip}")
 async def remove_whitelist_ip(ip: str, token_data: dict = Depends(verify_token)):
     valid_ip = require_valid_ip(ip)
     await whitelist_collection.delete_one({"ip": valid_ip})
-    return {"message": "IP 已从白名单移除"}
+    return {"message": "WHITELIST_REMOVED"}
 
 # ==========================================
 # 黑名单管理 API (供后台页面调用)
@@ -711,13 +711,13 @@ async def add_blacklist_ip(data: BlacklistIP, token_data: dict = Depends(verify_
         {"$set": {"ip": valid_ip, "added_at": datetime.utcnow().isoformat(), "source": "manual"}},
         upsert=True,
     )
-    return {"message": "IP 已成功加入黑名单"}
+    return {"message": "BLACKLIST_ADDED"}
 
 @app.delete("/api/admin/blacklist/{ip}")
 async def remove_blacklist_ip(ip: str, token_data: dict = Depends(verify_token)):
     valid_ip = require_valid_ip(ip)
     await blacklist_collection.delete_one({"ip": valid_ip})
-    return {"message": "IP 已从黑名单移除"}
+    return {"message": "BLACKLIST_REMOVED"}
 
 # ==========================================
 # 在线聊天系统 API
@@ -730,7 +730,7 @@ def validate_israeli_phone(phone: str) -> str:
     elif cleaned.startswith("972"):
         cleaned = "0" + cleaned[3:]
     if not re.match(r"^05\d{8}$", cleaned):
-        raise HTTPException(status_code=400, detail="请输入有效的以色列手机号码 (05XXXXXXXX)")
+        raise HTTPException(status_code=400, detail="INVALID_ISRAELI_PHONE")
     return cleaned
 
 def serialize_message(doc: dict) -> dict:
@@ -862,9 +862,9 @@ async def create_message_record(
 
     now = datetime.utcnow().isoformat()
     message_id = str(uuid.uuid4())
-    preview = content[:100] if content else ("[图片]" if msg_type == "image" else "")
+    preview = content[:100] if content else ("[Image]" if msg_type == "image" else "")
     if msg_type == "image" and filename:
-        preview = f"[图片] {filename}"
+        preview = f"[Image] {filename}"
 
     message = {
         "message_id": message_id,
@@ -901,7 +901,7 @@ async def create_message_record(
             "$inc": {inc_field: 1},
             "$setOnInsert": {
                 "session_id": session_id,
-                "visitor_name": "访客",
+                    "visitor_name": "Guest",
                 "visitor_phone": "",
                 "visitor_ip": "",
                 "created_at": now,
@@ -974,14 +974,14 @@ async def create_or_get_chat_session(
 
         visitor_name = data.visitor_name.strip()
         if not visitor_name or len(visitor_name) < 2:
-            raise HTTPException(status_code=400, detail="请输入您的姓名")
+            raise HTTPException(status_code=400, detail="NAME_REQUIRED")
 
         visitor_phone = validate_israeli_phone(data.visitor_phone)
         ip = get_client_ip(request)
 
         session, is_new = await ensure_session(session_id, visitor_name, visitor_phone, ip)
         if not session:
-            raise HTTPException(status_code=500, detail="会话创建失败，请重试")
+            raise HTTPException(status_code=500, detail="SESSION_CREATE_FAILED")
 
         if is_new:
             background_tasks.add_task(notify_new_session, visitor_name, visitor_phone, session_id)
@@ -996,8 +996,8 @@ async def create_or_get_chat_session(
         raise
     except Exception as e:
         if not os.environ.get("MONGO_URL"):
-            raise HTTPException(status_code=503, detail="数据库未配置，请在 Vercel 设置 MONGO_URL 环境变量")
-        raise HTTPException(status_code=503, detail="数据库连接失败，请稍后重试")
+            raise HTTPException(status_code=503, detail="DB_NOT_CONFIGURED")
+        raise HTTPException(status_code=503, detail="DB_CONNECTION_FAILED")
 
 @app.get("/api/chat/sync")
 async def sync_visitor_chat(session_id: str = Query(...)):
@@ -1040,9 +1040,9 @@ async def send_visitor_message(
     ensure_mongo_context()
     content = data.content.strip()
     if not content:
-        raise HTTPException(status_code=400, detail="消息内容不能为空")
+        raise HTTPException(status_code=400, detail="MESSAGE_EMPTY")
     if len(content) > 2000:
-        raise HTTPException(status_code=400, detail="消息过长")
+        raise HTTPException(status_code=400, detail="MESSAGE_TOO_LONG")
 
     session_id = data.session_id.strip()
     visitor_name = data.visitor_name.strip()
@@ -1052,7 +1052,7 @@ async def send_visitor_message(
     session = await chat_sessions_collection.find_one({"session_id": session_id})
     if not session:
         if not visitor_name or not visitor_phone:
-            raise HTTPException(status_code=400, detail="请先完成姓名和手机号验证")
+            raise HTTPException(status_code=400, detail="REGISTRATION_REQUIRED")
         session, _ = await ensure_session(session_id, visitor_name, visitor_phone, ip)
     else:
         visitor_name = visitor_name or session.get("visitor_name", "")
@@ -1091,7 +1091,7 @@ async def upload_visitor_image(
 
     if not session:
         if not vname or not vphone:
-            raise HTTPException(status_code=400, detail="请先完成姓名和手机号验证")
+            raise HTTPException(status_code=400, detail="REGISTRATION_REQUIRED")
         session, _ = await ensure_session(session_id, vname, vphone, ip)
     else:
         vname = vname or session.get("visitor_name", "")
@@ -1108,7 +1108,7 @@ async def upload_visitor_image(
         mime_type=mime_type,
     )
     background_tasks.add_task(
-        notify_new_message, vname, vphone, f"[图片] {filename}", session_id, "image"
+        notify_new_message, vname, vphone, f"[Image] {filename}", session_id, "image"
     )
     return {"message": message}
 
@@ -1117,7 +1117,7 @@ async def serve_chat_image(image_id: str):
     ensure_mongo_context()
     data, mime, filename = await get_image_by_id(image_id)
     if not data:
-        raise HTTPException(status_code=404, detail="图片不存在")
+        raise HTTPException(status_code=404, detail="IMAGE_NOT_FOUND")
     safe_name = "image.jpg"
     if filename and all(ord(c) < 128 for c in filename):
         safe_name = filename.replace('"', "")
@@ -1179,11 +1179,11 @@ async def send_admin_reply(
     ensure_mongo_context()
     content = data.content.strip()
     if not content:
-        raise HTTPException(status_code=400, detail="消息内容不能为空")
+        raise HTTPException(status_code=400, detail="MESSAGE_EMPTY")
 
     session = await chat_sessions_collection.find_one({"session_id": session_id})
     if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise HTTPException(status_code=404, detail="SESSION_NOT_FOUND")
 
     message = await create_text_message_record(
         session_id=session_id,
@@ -1206,7 +1206,7 @@ async def upload_admin_image(
 
     session = await chat_sessions_collection.find_one({"session_id": session_id})
     if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise HTTPException(status_code=404, detail="SESSION_NOT_FOUND")
 
     filename = file.filename or "image.jpg"
     message = await create_image_message_record(
@@ -1235,5 +1235,5 @@ async def delete_chat_session(session_id: str, token_data: dict = Depends(verify
     await chat_messages_collection.delete_many({"session_id": session_id})
     result = await chat_sessions_collection.delete_one({"session_id": session_id})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    return {"message": "会话已删除"}
+        raise HTTPException(status_code=404, detail="SESSION_NOT_FOUND")
+    return {"message": "SESSION_DELETED"}

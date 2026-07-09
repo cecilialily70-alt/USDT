@@ -11,12 +11,12 @@ import {
   savePendingMessage,
   removePendingMessage,
   validateIsraeliPhone,
+  formatIsraeliPhoneInput,
   createClientMessageId,
   getApiErrorMessage,
 } from '../utils/chatHelpers';
 import {
   MAX_IMAGE_SIZE_BYTES,
-  UNSUPPORTED_IMAGE_MESSAGE,
   isSupportedImageFile,
 } from '../utils/chatConstants';
 
@@ -251,7 +251,7 @@ const ChatWidget = () => {
     } catch (err) {
       setPhoneError(
         err.response
-          ? getApiErrorMessage(err, t.chat.registerFailed)
+          ? getApiErrorMessage(err, t.chat.registerFailed, t)
           : t.chat.networkError
       );
     } finally {
@@ -322,7 +322,7 @@ const ChatWidget = () => {
     e.target.value = '';
 
     if (!isSupportedImageFile(file)) {
-      setPhoneError(UNSUPPORTED_IMAGE_MESSAGE);
+      setPhoneError(t.chat.imageUnsupported);
       return;
     }
     if (file.size > MAX_IMAGE_SIZE_BYTES) {
@@ -376,7 +376,7 @@ const ChatWidget = () => {
           m.client_message_id === clientId ? { ...m, status: 'failed' } : m
         )
       );
-      setPhoneError(getApiErrorMessage(err, '图片发送失败，请重试'));
+      setPhoneError(getApiErrorMessage(err, t.chat.imageUploadFailed, t));
     } finally {
       setUploading(false);
       inputRef.current?.focus();
@@ -425,15 +425,22 @@ const ChatWidget = () => {
                 onChange={(e) => setNameInput(e.target.value)}
                 placeholder={t.chat.namePlaceholder}
                 className="bg-[#0a0e1a]/80 border-white/10 text-white"
+                dir="auto"
+                autoComplete="name"
                 autoFocus
               />
               <Input
                 value={phoneInput}
-                onChange={(e) => { setPhoneInput(e.target.value); setPhoneError(''); }}
+                onChange={(e) => {
+                  setPhoneInput(formatIsraeliPhoneInput(e.target.value));
+                  setPhoneError('');
+                }}
                 onKeyDown={handleKeyDown}
                 placeholder={t.chat.phonePlaceholder}
                 type="tel"
-                className="bg-[#0a0e1a]/80 border-white/10 text-white"
+                inputMode="tel"
+                autoComplete="tel"
+                className="bg-[#0a0e1a]/80 border-white/10 text-white text-start"
                 dir="ltr"
               />
               {phoneError && <p className="text-red-400 text-xs text-center">{phoneError}</p>}
@@ -486,13 +493,14 @@ const ChatWidget = () => {
                   onKeyDown={handleKeyDown}
                   placeholder={t.chat.inputPlaceholder}
                   disabled={sending}
+                  dir="auto"
                   className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"
                 />
                 <Button
                   onClick={handleSend}
                   disabled={!input.trim() || sending}
                   size="icon"
-                  className="h-10 w-10 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shrink-0"
+                  className="h-10 w-10 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shrink-0 rtl:scale-x-[-1]"
                 >
                   <Send className="w-4 h-4" />
                 </Button>
