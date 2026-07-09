@@ -10,8 +10,8 @@ import axios from 'axios';
 import { mergeMessages, createClientMessageId, formatChatTime, retryRequest, getApiErrorMessage } from '../utils/chatHelpers';
 import {
   MAX_IMAGE_SIZE_BYTES,
-  SUPPORTED_IMAGE_MIME,
   UNSUPPORTED_IMAGE_MESSAGE,
+  isSupportedImageFile,
 } from '../utils/chatConstants';
 
 const API = '/api';
@@ -30,6 +30,7 @@ const AdminChat = () => {
   const forceScrollToBottomRef = useRef(false);
   const lastSinceRef = useRef(null);
   const fileInputRef = useRef(null);
+  const replyInputRef = useRef(null);
   const pollRef = useRef(null);
   const [blacklistIpInput, setBlacklistIpInput] = useState('');
 
@@ -205,6 +206,7 @@ const AdminChat = () => {
       toast.error(getApiErrorMessage(err, '发送失败，请重试'));
     } finally {
       setSending(false);
+      replyInputRef.current?.focus();
     }
   };
 
@@ -213,9 +215,7 @@ const AdminChat = () => {
     if (!file || !selectedSession || uploading) return;
     e.target.value = '';
 
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    if (!file.type.startsWith('image/')) return;
-    if (ext === 'heic' || ext === 'heif' || !SUPPORTED_IMAGE_MIME.has(file.type)) {
+    if (!isSupportedImageFile(file)) {
       toast.error(UNSUPPORTED_IMAGE_MESSAGE);
       return;
     }
@@ -274,6 +274,7 @@ const AdminChat = () => {
       toast.error(getApiErrorMessage(err, '图片发送失败，请重试'));
     } finally {
       setUploading(false);
+      replyInputRef.current?.focus();
     }
   };
 
@@ -449,6 +450,7 @@ const AdminChat = () => {
                   <ImagePlus className="w-5 h-5" />
                 </Button>
                 <Input
+                  ref={replyInputRef}
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendReply())}

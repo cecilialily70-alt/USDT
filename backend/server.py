@@ -479,15 +479,30 @@ async def maybe_cleanup_expired_chat_data():
             pass
         _last_cleanup_run_at = time.time()
 
-async def read_and_validate_image(file: UploadFile) -> bytes:
-    if not file.content_type or file.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail=IMAGE_TYPE_ERROR_DETAIL)
+def resolve_image_mime(filename: str, content_type: str) -> str:
+    ct = (content_type or "").split(";")[0].strip().lower()
+    if ct in ALLOWED_IMAGE_TYPES:
+        return ct
+    ext = os.path.splitext(filename or "")[1].lower().lstrip(".")
+    return {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "webp": "image/webp",
+        "bmp": "image/bmp",
+    }.get(ext, "")
+
+async def read_and_validate_image(file: UploadFile) -> tuple[bytes, str]:
     file_bytes = await file.read()
     if len(file_bytes) == 0:
         raise HTTPException(status_code=400, detail="文件为空")
+    mime_type = resolve_image_mime(file.filename or "", file.content_type or "")
+    if mime_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail=IMAGE_TYPE_ERROR_DETAIL)
     if len(file_bytes) > MAX_IMAGE_SIZE:
         raise HTTPException(status_code=400, detail="图片不能超过 20MB")
-    return file_bytes
+    return file_bytes, mime_type
 
 TELEGRAM_BOT_TOKEN = (
     os.environ.get("TG_BOT")
@@ -1066,7 +1081,7 @@ async def upload_visitor_image(
     client_message_id: str = Form(""),
 ):
     ensure_mongo_context()
-    file_bytes = await read_and_validate_image(file)
+    file_bytes, mime_type = await read_and_validate_image(file)
 
     session_id = session_id.strip()
     ip = get_client_ip(request)
@@ -1090,7 +1105,7 @@ async def upload_visitor_image(
         client_message_id=client_message_id,
         file_bytes=file_bytes,
         filename=filename,
-        mime_type=file.content_type,
+        mime_type=mime_type,
     )
     background_tasks.add_task(
         notify_new_message, vname, vphone, f"[图片] {filename}", session_id, "image"
@@ -1180,7 +1195,7 @@ async def upload_admin_image(
     token_data: dict = Depends(verify_token),
 ):
     ensure_mongo_context()
-    file_bytes = await read_and_validate_image(file)
+    file_bytes, mime_type = await read_and_validate_image(file)
 
     session = await chat_sessions_collection.find_one({"session_id": session_id})
     if not session:
@@ -1194,7 +1209,7 @@ async def upload_admin_image(
         client_message_id=client_message_id,
         file_bytes=file_bytes,
         filename=filename,
-        mime_type=file.content_type,
+        mime_type=mime_type,
     )
     return {"message": message}
 

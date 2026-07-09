@@ -10,3 +10,27 @@ export const SUPPORTED_IMAGE_MIME = new Set([
 ]);
 
 export const UNSUPPORTED_IMAGE_MESSAGE = '仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持';
+
+const IMAGE_EXT_TO_MIME = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+};
+
+export function resolveImageMime(file) {
+  const type = (file?.type || '').split(';')[0].trim().toLowerCase();
+  if (type && SUPPORTED_IMAGE_MIME.has(type)) return type;
+  const ext = (file?.name?.split('.').pop() || '').toLowerCase();
+  return IMAGE_EXT_TO_MIME[ext] || '';
+}
+
+export function isSupportedImageFile(file) {
+  if (!file) return false;
+  const ext = (file.name?.split('.').pop() || '').toLowerCase();
+  if (ext === 'heic' || ext === 'heif') return false;
+  const mime = resolveImageMime(file);
+  return Boolean(mime) && SUPPORTED_IMAGE_MIME.has(mime);
+}

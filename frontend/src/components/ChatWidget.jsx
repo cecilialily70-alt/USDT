@@ -16,8 +16,8 @@ import {
 } from '../utils/chatHelpers';
 import {
   MAX_IMAGE_SIZE_BYTES,
-  SUPPORTED_IMAGE_MIME,
   UNSUPPORTED_IMAGE_MESSAGE,
+  isSupportedImageFile,
 } from '../utils/chatConstants';
 
 const API = '/api';
@@ -57,6 +57,7 @@ const ChatWidget = () => {
   const messagesEndRef = useRef(null);
   const lastSinceRef = useRef(null);
   const fileInputRef = useRef(null);
+  const inputRef = useRef(null);
   const pollRef = useRef(null);
   const pendingFilesRef = useRef(new Map());
 
@@ -311,6 +312,7 @@ const ChatWidget = () => {
       setInput(content);
     } finally {
       setSending(false);
+      inputRef.current?.focus();
     }
   };
 
@@ -319,9 +321,7 @@ const ChatWidget = () => {
     if (!file || uploading) return;
     e.target.value = '';
 
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    if (!file.type.startsWith('image/')) return;
-    if (ext === 'heic' || ext === 'heif' || !SUPPORTED_IMAGE_MIME.has(file.type)) {
+    if (!isSupportedImageFile(file)) {
       setPhoneError(UNSUPPORTED_IMAGE_MESSAGE);
       return;
     }
@@ -379,6 +379,7 @@ const ChatWidget = () => {
       setPhoneError(getApiErrorMessage(err, '图片发送失败，请重试'));
     } finally {
       setUploading(false);
+      inputRef.current?.focus();
     }
   };
 
@@ -479,6 +480,7 @@ const ChatWidget = () => {
                   <ImagePlus className="w-5 h-5" />
                 </Button>
                 <Input
+                  ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
