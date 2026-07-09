@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -38,45 +38,12 @@ const AdminPanel = () => {
   const [whitelist, setWhitelist] = useState([]);
   const [newIp, setNewIp] = useState('');
 
-  const clearSession = () => {
+  const clearSession = useCallback(() => {
     localStorage.removeItem('admin_token');
     setIsAuthenticated(false);
-  };
-
-  useEffect(() => {
-    const validateToken = async () => {
-      const token = localStorage.getItem('admin_token');
-      if (!token) {
-        setAuthChecking(false);
-        return;
-      }
-      try {
-        await axios.get(`${API}/admin/config`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setIsAuthenticated(true);
-      } catch (error) {
-        if (error.response?.status === 401) {
-          clearSession();
-        } else {
-          // Network/other errors: keep token but show login if config cannot load
-          clearSession();
-        }
-      } finally {
-        setAuthChecking(false);
-      }
-    };
-    validateToken();
   }, []);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchConfig();
-      fetchWhitelist();
-    }
-  }, [isAuthenticated]);
-
-  const fetchConfig = async () => {
+  const fetchConfig = useCallback(async () => {
     try {
       const token = localStorage.getItem('admin_token');
       const response = await axios.get(`${API}/admin/config`, {
@@ -94,9 +61,9 @@ const AdminPanel = () => {
         toast.error(att.sessionExpired, { description: att.sessionExpiredDesc });
       }
     }
-  };
+  }, [att.sessionExpired, att.sessionExpiredDesc, clearSession]);
 
-  const fetchWhitelist = async () => {
+  const fetchWhitelist = useCallback(async () => {
     try {
       const token = localStorage.getItem('admin_token');
       const res = await axios.get(`${API}/admin/whitelist`, {
@@ -106,7 +73,35 @@ const AdminPanel = () => {
     } catch (error) {
       if (error.response?.status === 401) clearSession();
     }
-  };
+  }, [clearSession]);
+
+  useEffect(() => {
+    const validateToken = async () => {
+      const token = localStorage.getItem('admin_token');
+      if (!token) {
+        setAuthChecking(false);
+        return;
+      }
+      try {
+        await axios.get(`${API}/admin/config`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setIsAuthenticated(true);
+      } catch {
+        clearSession();
+      } finally {
+        setAuthChecking(false);
+      }
+    };
+    validateToken();
+  }, [clearSession]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchConfig();
+      fetchWhitelist();
+    }
+  }, [isAuthenticated, fetchConfig, fetchWhitelist]);
 
   const handleSave = async () => {
     setLoading(true);
