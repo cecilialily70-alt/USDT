@@ -890,8 +890,6 @@ async def create_message_record(
                 "visitor_phone": "",
                 "visitor_ip": "",
                 "created_at": now,
-                "unread_admin": 0,
-                "unread_visitor": 0,
             },
         },
         upsert=True,
