@@ -42,10 +42,12 @@ See `backend/.env.example`. `backend/.env` is gitignored and must never be commi
 1. Connect the repo; root is the project folder containing `vercel.json`.
 2. Configure env vars above.
 3. Atlas Network Access: allow Vercel egress (or `0.0.0.0/0` if needed).
-4. Frontend build uses **npm** + `frontend/package-lock.json` (`npm ci` / `npm run build` in `vercel.json`).
+4. Frontend build uses **npm** + `frontend/package-lock.json` (`npm install` / `npm run build` in `vercel.json`).
 5. Preview CORS allows `https://*.vercel.app` when `VERCEL_ENV=preview`.
 
-Python function defaults: **1024 MB**, **30s** `maxDuration` (see `vercel.json`).
+> Note: This project uses the legacy `builds` + `routes` style in `vercel.json` (Python API + CRA frontend in one repo). Do **not** mix a top-level `functions` block with `builds` — Vercel will fail the deployment.
+
+Python Lambda size limit is set via `maxLambdaSize` on the Python build. For `maxDuration` / memory, set them in the Vercel project **Settings → Functions** if needed.
 
 ## Local development
 

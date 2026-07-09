@@ -12,18 +12,12 @@
       "src": "frontend/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "installCommand": "npm ci",
+        "installCommand": "npm install",
         "buildCommand": "npm run build",
         "outputDirectory": "build"
       }
     }
   ],
-  "functions": {
-    "backend/server.py": {
-      "memory": 1024,
-      "maxDuration": 30
-    }
-  },
   "routes": [
     {
       "src": "/api/(.*)",
