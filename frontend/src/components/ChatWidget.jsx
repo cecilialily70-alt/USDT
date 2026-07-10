@@ -102,32 +102,6 @@ const ChatWidget = () => {
     }
   }, [needsRegister, isOpen, applyMessages, visitorPhone]);
 
-  const fetchMessages = useCallback(async (since = null, fullLoad = false) => {
-    try {
-      const params = visitorChatParams(sessionId.current, visitorPhone);
-      if (since && !fullLoad) params.since = since;
-
-      const res = await axios.get(`${API}/chat/messages`, {
-        params,
-        headers: visitorChatHeaders(visitorPhone),
-      });
-      const newMsgs = res.data.messages || [];
-
-      if (newMsgs.length > 0 || fullLoad) {
-        applyMessages(newMsgs, !fullLoad && !!since);
-
-        if (!isOpen) {
-          const adminMsgs = newMsgs.filter((m) => m.sender === 'admin');
-          if (adminMsgs.length > 0) {
-            setUnread((u) => u + adminMsgs.length);
-          }
-        }
-      }
-    } catch {
-      // keep local/pending messages on network error
-    }
-  }, [isOpen, applyMessages, visitorPhone]);
-
   const initSession = useCallback(async (name, phone) => {
     await axios.post(`${API}/chat/session`, {
       session_id: sessionId.current,
@@ -262,16 +236,17 @@ const ChatWidget = () => {
     if (isOpen && !needsRegister) {
       setUnread(0);
       lastSinceRef.current = null;
-      fetchMessages(null, true);
+      syncFromServer();
       pollRef.current = setInterval(() => {
         if (document.visibilityState === 'hidden') return;
-        fetchMessages(lastSinceRef.current);
+        // Full sync so admin-deleted messages disappear without any visitor notice.
+        syncFromServer();
       }, POLL_INTERVAL);
     } else {
       clearInterval(pollRef.current);
     }
     return () => clearInterval(pollRef.current);
-  }, [isOpen, needsRegister, fetchMessages]);
+  }, [isOpen, needsRegister, syncFromServer]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -351,7 +326,7 @@ const ChatWidget = () => {
       setVisitorName(name);
       setVisitorPhone(phone);
       setNeedsRegister(false);
-      fetchMessages(null, true);
+      syncFromServer();
     } catch (err) {
       setPhoneError(
         err.response
