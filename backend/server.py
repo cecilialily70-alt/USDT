@@ -50,19 +50,34 @@ IS_PRODUCTION = VERCEL_ENV == "production" or os.environ.get("ENV") == "producti
 # 优化 2: 严格的 CORS 限制 (保护你的专属域名)
 # Preview: also allow https://*.vercel.app
 # ==========================================
+_cors_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "https://www.ils-usdt.xyz",
+    "https://ils-usdt.xyz",
+]
+# Extra origins: CORS_ORIGINS=https://a.com,https://b.com
+for _o in (os.environ.get("CORS_ORIGINS") or "").split(","):
+    _o = _o.strip().rstrip("/")
+    if _o and _o not in _cors_origins:
+        _cors_origins.append(_o)
+# Auto-allow this deployment's Vercel URL (production + preview)
+_vercel_url = (os.environ.get("VERCEL_URL") or "").strip()
+if _vercel_url:
+    _vu = _vercel_url if _vercel_url.startswith("http") else f"https://{_vercel_url}"
+    _vu = _vu.rstrip("/")
+    if _vu not in _cors_origins:
+        _cors_origins.append(_vu)
+
 _cors_kwargs = {
-    "allow_origins": [
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:3000",
-        "https://www.ils-usdt.xyz",
-        "https://ils-usdt.xyz",
-    ],
+    "allow_origins": _cors_origins,
     "allow_credentials": True,
     "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "allow_headers": ["Authorization", "Content-Type", "X-Visitor-Phone"],
 }
-if VERCEL_ENV == "preview":
+if VERCEL_ENV in ("preview", "production"):
+    # Preview + *.vercel.app production aliases
     _cors_kwargs["allow_origin_regex"] = r"^https://[\w.-]+\.vercel\.app$"
 app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
@@ -269,7 +284,8 @@ async def safe_db_op(coro_factory, fallback=None):
     except Exception:
         return fallback
 
-MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB 原图不压缩
+# Vercel serverless request body limit is ~4.5MB — keep under that for reliable uploads
+MAX_IMAGE_SIZE = 4 * 1024 * 1024  # 4MB
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg", "image/jpg", "image/png", "image/gif",
     "image/webp", "image/bmp",
@@ -972,6 +988,7 @@ async def ensure_session(session_id: str, visitor_name: str, visitor_phone: str,
                 "visitor_name": visitor_name,
                 "visitor_phone": visitor_phone,
                 "visitor_ip": ip,
+                "last_seen_at": now,
             },
             "$setOnInsert": {
                 "session_id": session_id,
@@ -987,6 +1004,17 @@ async def ensure_session(session_id: str, visitor_name: str, visitor_phone: str,
     session = await chat_sessions_collection.find_one({"session_id": session_id}, {"_id": 0})
     is_new = result.upserted_id is not None
     return session, is_new
+
+
+async def touch_visitor_presence(session_id: str):
+    """Update last_seen_at so admin can show online/offline."""
+    if not session_id:
+        return
+    now = datetime.utcnow().isoformat()
+    await chat_sessions_collection.update_one(
+        {"session_id": session_id},
+        {"$set": {"last_seen_at": now}},
+    )
 
 async def save_image_original(file_bytes: bytes, filename: str, mime_type: str, session_id: str) -> str:
     ensure_mongo_context()
@@ -1203,6 +1231,29 @@ async def create_or_get_chat_session(
             raise HTTPException(status_code=503, detail="DB_NOT_CONFIGURED")
         raise HTTPException(status_code=503, detail="DB_CONNECTION_FAILED")
 
+@app.post("/api/chat/ping")
+async def ping_visitor_presence(
+    request: Request,
+    session_id: str = Query(...),
+    visitor_phone: str = Query(""),
+):
+    """Lightweight presence heartbeat — does not fetch messages or clear unread."""
+    ensure_mongo_context()
+    ip = get_client_ip(request) or "unknown"
+    limited = await check_rate_limit(
+        f"chat_ping:{ip}",
+        120,
+        CHAT_RATE_LIMIT_WINDOW_SECONDS,
+        increment=True,
+    )
+    if limited:
+        raise HTTPException(status_code=429, detail="RATE_LIMITED")
+    phone = visitor_phone_from_request(request, visitor_phone)
+    await assert_visitor_session_access(session_id, phone, require_existing=True)
+    await touch_visitor_presence(session_id)
+    return {"ok": True, "ts": datetime.utcnow().isoformat()}
+
+
 @app.get("/api/chat/sync")
 async def sync_visitor_chat(
     request: Request,
@@ -1213,6 +1264,7 @@ async def sync_visitor_chat(
     ensure_mongo_context()
     phone = visitor_phone_from_request(request, visitor_phone)
     session = await assert_visitor_session_access(session_id, phone, require_existing=True)
+    await touch_visitor_presence(session_id)
     cursor = chat_messages_collection.find({"session_id": session_id}, {"_id": 0}).sort("created_at", 1)
     messages = [serialize_message(m, session_id) for m in await cursor.to_list(length=2000)]
     return {
@@ -1240,7 +1292,7 @@ async def get_visitor_messages(
 
     await chat_sessions_collection.update_one(
         {"session_id": session_id},
-        {"$set": {"unread_visitor": 0}},
+        {"$set": {"unread_visitor": 0, "last_seen_at": datetime.utcnow().isoformat()}},
     )
 
     return {"messages": messages}
@@ -1280,6 +1332,7 @@ async def send_visitor_message(
         content=content,
         client_message_id=data.client_message_id,
     )
+    await touch_visitor_presence(session_id)
     background_tasks.add_task(
         notify_new_message, visitor_name, visitor_phone, content, session_id, "text"
     )
@@ -1325,6 +1378,7 @@ async def upload_visitor_image(
         filename=filename,
         mime_type=mime_type,
     )
+    await touch_visitor_presence(session_id)
     background_tasks.add_task(
         notify_new_message, vname, vphone, f"[Image] {filename}", session_id, "image"
     )

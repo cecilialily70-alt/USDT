@@ -26,7 +26,9 @@ const API = '/api';
 const SESSION_KEY = 'chat_session_id';
 const NAME_KEY = 'chat_visitor_name';
 const PHONE_KEY = 'chat_visitor_phone';
-const POLL_INTERVAL = 2500;
+const POLL_INTERVAL = 1500;
+const PING_INTERVAL = 5000;
+const BG_SYNC_INTERVAL = 8000;
 
 const getOrCreateSessionId = () => {
   let id = localStorage.getItem(SESSION_KEY);
@@ -223,11 +225,35 @@ const ChatWidget = () => {
   }, [needsRegister, syncFromServer]);
 
   useEffect(() => {
+    if (needsRegister) return undefined;
+
+    const ping = () => {
+      if (document.visibilityState === 'hidden') return;
+      const phone = localStorage.getItem(PHONE_KEY) || '';
+      axios
+        .post(
+          `${API}/chat/ping`,
+          null,
+          {
+            params: visitorChatParams(sessionId.current, phone),
+            headers: visitorChatHeaders(phone),
+            timeout: 8000,
+          }
+        )
+        .catch(() => {});
+    };
+
+    ping();
+    const id = setInterval(ping, PING_INTERVAL);
+    return () => clearInterval(id);
+  }, [needsRegister]);
+
+  useEffect(() => {
     if (!needsRegister && !isOpen) {
       const bgPoll = setInterval(() => {
         if (document.visibilityState === 'hidden') return;
         syncFromServer();
-      }, POLL_INTERVAL);
+      }, BG_SYNC_INTERVAL);
       return () => clearInterval(bgPoll);
     }
   }, [needsRegister, isOpen, syncFromServer]);

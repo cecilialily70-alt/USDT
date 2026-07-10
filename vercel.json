@@ -12,7 +12,7 @@
       "src": "frontend/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "installCommand": "npm install",
+        "installCommand": "npm ci || npm install",
         "buildCommand": "CI=false npm run build",
         "outputDirectory": "build"
       }
@@ -22,6 +22,9 @@
     {
       "src": "/api/(.*)",
       "dest": "/backend/server.py"
+    },
+    {
+      "handle": "filesystem"
     },
     {
       "src": "/(static/.*)",

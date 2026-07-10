@@ -50,6 +50,7 @@ const LEGACY_DETAIL_MAP = {
   'IP 格式无效': 'INVALID_IP_FORMAT',
   '文件为空': 'EMPTY_FILE',
   '仅支持 JPG/PNG/GIF/WebP/BMP，HEIC/HEIF 暂不支持': 'IMAGE_TYPE_NOT_SUPPORTED',
+  '图片不能超过 4MB': 'IMAGE_TOO_LARGE',
   '图片不能超过 20MB': 'IMAGE_TOO_LARGE',
   '登录尝试过于频繁，请稍后再试': 'RATE_LIMITED',
   '安全限制：生产环境禁止使用默认后台密码，请先修改 adminPassword': 'DEFAULT_PASSWORD_FORBIDDEN',

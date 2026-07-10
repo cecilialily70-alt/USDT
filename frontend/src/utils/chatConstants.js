@@ -1,4 +1,5 @@
-export const MAX_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
+// Vercel serverless body limit ~4.5MB — keep client limit aligned
+export const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024;
 
 export const SUPPORTED_IMAGE_MIME = new Set([
   'image/jpeg',

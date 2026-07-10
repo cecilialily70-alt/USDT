@@ -15,7 +15,7 @@ import {
 } from '../utils/chatConstants';
 
 const API = '/api';
-const POLL_INTERVAL = 2500;
+const POLL_INTERVAL = 1000;
 
 const AdminChat = () => {
   const { t, locale } = useLanguage();

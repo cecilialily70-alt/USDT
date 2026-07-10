@@ -19,8 +19,9 @@ Set these in Vercel (Production / Preview) or `backend/.env` locally:
 | `MONGO_URL` | Yes | MongoDB Atlas connection string (`MONGODB_URI` also accepted) |
 | `JWT_SECRET` | Yes | Long random secret for admin JWT. **Do not** derive from `MONGO_URL` |
 | `ADMIN_PATH` | Recommended | Fallback admin URL path if not set in MongoDB config |
+| `CORS_ORIGINS` | Optional | Extra allowed origins, comma-separated (e.g. `https://new-domain.com`) |
 | `TG_BOT` / `TG_CHAT_ID` | Optional | Telegram ops alerts (Chinese text OK — ops only) |
-| `VERCEL_ENV` | Auto | Set by Vercel (`production` / `preview`) |
+| `VERCEL_ENV` / `VERCEL_URL` | Auto | Set by Vercel |
 
 See `backend/.env.example`. `backend/.env` is gitignored and must never be committed.
 
@@ -39,15 +40,18 @@ See `backend/.env.example`. `backend/.env` is gitignored and must never be commi
 
 ## Deploy (Vercel)
 
-1. Connect the repo; root is the project folder containing `vercel.json`.
-2. Configure env vars above.
+1. Connect the repo; **Root Directory = repository root** (the folder that contains `vercel.json`, not `frontend/`).
+2. Configure env vars above (`MONGO_URL`, `JWT_SECRET`, `ADMIN_PATH`).
 3. Atlas Network Access: allow Vercel egress (or `0.0.0.0/0` if needed).
-4. Frontend build uses **npm** + `frontend/package-lock.json` (`npm install` / `npm run build` in `vercel.json`).
-5. Preview CORS allows `https://*.vercel.app` when `VERCEL_ENV=preview`.
+4. Frontend build uses **npm** + `frontend/package-lock.json` (`npm ci` / `npm run build` in `vercel.json`).
+5. Preview/production on `*.vercel.app` is allowed via CORS; custom domains can also be listed in `CORS_ORIGINS`.
+6. After deploy, smoke-test: homepage → `/api/health` or `/api/config` → open chat → ping presence.
 
 > Note: This project uses the legacy `builds` + `routes` style in `vercel.json` (Python API + CRA frontend in one repo). Do **not** mix a top-level `functions` block with `builds` — Vercel will fail the deployment.
 
 Python Lambda size limit is set via `maxLambdaSize` on the Python build. For `maxDuration` / memory, set them in the Vercel project **Settings → Functions** if needed.
+
+**Image uploads:** capped at **4MB** to stay under Vercel’s serverless request body limit (~4.5MB).
 
 ## Local development
 
@@ -76,11 +80,10 @@ Proxy: `frontend/src/setupProxy.js` forwards `/api` → `localhost:8000`.
 
 ## Desktop ops app
 
-- Source: `后台.py`; build via `build.bat` / `打包.bat` → `python build.py`
-- Spec: `ExchangeAdmin.spec` (`console=False`, `UPX=False`)
-- Requires `logo.ico` next to the spec
-- Config/session: Windows `%LOCALAPPDATA%\ExchangeAdmin\` (encrypted), not hardcoded secrets
-- Ops UI language: Chinese; chat bubbles keep Hebrew/RTL habits; times use `Asia/Jerusalem` 24h
+- Source: separate Windows app repo `wy-exchange-admin` (CustomTkinter + WebView2 chat)
+- Build via that repo’s `build.bat` / `build.py`
+- Config/session: Windows `%LOCALAPPDATA%\ExchangeAdmin\` (encrypted)
+- Ops UI language: Chinese; chat bubbles keep Hebrew/RTL; times use `Asia/Jerusalem` 24h
 
 ## Legal pages
 
