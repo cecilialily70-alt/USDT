@@ -238,3 +238,16 @@ code {
         transform: translateY(0);
     }
 }
+
+/* Chat FAB — thumb-friendly corner with safe-area */
+.chat-fab {
+    bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+    inset-inline-end: max(1rem, env(safe-area-inset-right, 0px));
+}
+
+@media (min-width: 768px) {
+    .chat-fab {
+        bottom: 2rem;
+        inset-inline-end: 2rem;
+    }
+}

@@ -14,7 +14,6 @@ import ChatWidget from './components/ChatWidget';
 import AdminOrNotFound from './components/AdminOrNotFound';
 import LegalPage from './pages/LegalPage';
 import axios from 'axios';
-import './App.css';
 
 const HomePage = () => (
   <>
@@ -28,7 +27,7 @@ const HomePage = () => (
 );
 
 const MainLayout = ({ children }) => (
-  <div className="App min-h-screen bg-gradient-to-b from-[#06080F] via-[#0F1419] to-[#0a0e1a] text-white">
+  <div className="min-h-screen bg-gradient-to-b from-[#06080F] via-[#0F1419] to-[#0a0e1a] text-white">
     <Navbar />
     {children}
     <Footer />

@@ -84,4 +84,4 @@ Proxy: `frontend/src/setupProxy.js` forwards `/api` → `localhost:8000`.
 
 ## Legal pages
 
-- `/terms`, `/privacy` — real routes (Footer Contact opens WhatsApp)
+- `/terms`, `/privacy` — real routes (Footer Contact opens live chat)

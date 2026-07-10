@@ -3,7 +3,6 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { supportedLanguages } from '../i18n/translations';
 import { Menu, X, Globe } from 'lucide-react';
 import { Button } from './ui/button';
-import { useNavigate } from 'react-router-dom';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +13,6 @@ import {
 const Navbar = () => {
   const { t, currentLanguage, changeLanguage, isRTL } = useLanguage();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const navigate = useNavigate();
 
   const scrollToSection = (sectionId) => {
     const element = document.getElementById(sectionId);

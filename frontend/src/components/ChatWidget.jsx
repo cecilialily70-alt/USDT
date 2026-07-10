@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { MessageSquare, X, Send, Minimize2, ImagePlus } from 'lucide-react';
+import { MessageSquare, Send, Minimize2, ImagePlus } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import ChatMessageBubble from './ChatMessageBubble';
@@ -251,6 +251,15 @@ const ChatWidget = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isOpen]);
+
   const handleRetryMessage = async (msg) => {
     if (!msg?.client_message_id || sending || uploading) return;
     if (msg.type === 'image') {
@@ -468,32 +477,39 @@ const ChatWidget = () => {
     <>
       {isOpen && (
         <div
-          className="fixed inset-0 z-50 w-full h-full sm:inset-auto sm:bottom-20 sm:start-4 sm:w-[calc(100vw-2rem)] sm:h-auto sm:max-h-[560px] flex flex-col rounded-none sm:rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-gradient-to-b from-[#0F1419] to-[#06080F]"
+          className="chat-panel fixed inset-0 z-[100] flex h-[100dvh] w-full flex-col overflow-hidden border border-white/10 bg-gradient-to-b from-[#0F1419] to-[#06080F] shadow-2xl sm:inset-auto sm:bottom-24 sm:start-6 sm:h-auto sm:max-h-[min(560px,calc(100dvh-7rem))] sm:w-[min(400px,calc(100vw-3rem))] sm:rounded-2xl"
           dir={isRTL ? 'rtl' : 'ltr'}
+          role="dialog"
+          aria-label={t.chat.title}
         >
-          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600/80 to-purple-600/80 border-b border-white/10">
+          <div className="flex items-center justify-between border-b border-white/10 bg-gradient-to-r from-blue-600/80 to-purple-600/80 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                <MessageSquare className="w-4 h-4 text-white" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
+                <MessageSquare className="h-4 w-4 text-white" />
               </div>
               <div>
-                <p className="text-white font-semibold text-sm">{t.chat.title}</p>
-                <p className="text-white/70 text-xs">{t.chat.subtitle}</p>
+                <p className="text-sm font-semibold text-white">{t.chat.title}</p>
+                <p className="text-xs text-white/70">{t.chat.subtitle}</p>
               </div>
             </div>
-            <button onClick={toggleOpen} className="text-white/70 hover:text-white transition-colors p-1">
-              <Minimize2 className="w-4 h-4" />
+            <button
+              type="button"
+              onClick={toggleOpen}
+              className="p-1 text-white/70 transition-colors hover:text-white"
+              aria-label="Close chat"
+            >
+              <Minimize2 className="h-4 w-4" />
             </button>
           </div>
 
           {needsRegister ? (
-            <div className="flex-1 p-6 flex flex-col justify-center gap-3">
-              <p className="text-gray-300 text-sm text-center">{t.chat.registerPrompt}</p>
+            <div className="flex flex-1 flex-col justify-center gap-3 p-6">
+              <p className="text-center text-sm text-gray-300">{t.chat.registerPrompt}</p>
               <Input
                 value={nameInput}
                 onChange={(e) => setNameInput(e.target.value)}
                 placeholder={t.chat.namePlaceholder}
-                className="bg-[#0a0e1a]/80 border-white/10 text-white"
+                className="border-white/10 bg-[#0a0e1a]/80 text-white"
                 dir="auto"
                 autoComplete="name"
                 autoFocus
@@ -509,23 +525,23 @@ const ChatWidget = () => {
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
-                className="bg-[#0a0e1a]/80 border-white/10 text-white text-start"
+                className="border-white/10 bg-[#0a0e1a]/80 text-start text-white"
                 dir="ltr"
               />
-              {phoneError && <p className="text-red-400 text-xs text-center">{phoneError}</p>}
+              {phoneError && <p className="text-center text-xs text-red-400">{phoneError}</p>}
               <Button
                 onClick={handleRegister}
                 disabled={registering}
-                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
+                className="bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700"
               >
                 {registering ? t.chat.registering : t.chat.startChat}
               </Button>
             </div>
           ) : (
             <>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 max-h-none sm:min-h-[300px] sm:max-h-[400px] scrollbar-thin">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 sm:min-h-[280px] sm:max-h-[380px]">
                 {messages.length === 0 && (
-                  <p className="text-gray-500 text-sm text-center py-8">{t.chat.empty}</p>
+                  <p className="py-8 text-center text-sm text-gray-500">{t.chat.empty}</p>
                 )}
                 {messages.map((msg) => (
                   <ChatMessageBubble
@@ -538,7 +554,10 @@ const ChatWidget = () => {
                 <div ref={messagesEndRef} />
               </div>
 
-              <div className="p-3 border-t border-white/10 flex gap-2 items-center">
+              {phoneError && (
+                <p className="px-4 pb-1 text-center text-xs text-red-400">{phoneError}</p>
+              )}
+              <div className="flex items-center gap-2 border-t border-white/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -552,27 +571,30 @@ const ChatWidget = () => {
                   size="icon"
                   disabled={uploading}
                   onClick={() => fileInputRef.current?.click()}
-                  className="h-10 w-10 text-gray-400 hover:text-white shrink-0"
+                  className="h-10 w-10 shrink-0 text-gray-400 hover:text-white"
                 >
-                  <ImagePlus className="w-5 h-5" />
+                  <ImagePlus className="h-5 w-5" />
                 </Button>
                 <Input
                   ref={inputRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    if (phoneError) setPhoneError('');
+                  }}
                   onKeyDown={handleKeyDown}
                   placeholder={t.chat.inputPlaceholder}
                   disabled={sending}
                   dir="auto"
-                  className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"
+                  className="h-10 flex-1 border-white/10 bg-[#0a0e1a]/80 text-sm text-white"
                 />
                 <Button
                   onClick={handleSend}
                   disabled={!input.trim() || sending}
                   size="icon"
-                  className="h-10 w-10 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shrink-0 rtl:scale-x-[-1]"
+                  className="h-10 w-10 shrink-0 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rtl:scale-x-[-1]"
                 >
-                  <Send className="w-4 h-4" />
+                  <Send className="h-4 w-4" />
                 </Button>
               </div>
             </>
@@ -580,24 +602,21 @@ const ChatWidget = () => {
         </div>
       )}
 
-      <button
-        onClick={toggleOpen}
-        className="fixed bottom-20 end-4 md:bottom-24 md:end-8 z-50 w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-2xl hover:shadow-purple-500/40 transition-all duration-300 hover:scale-110 flex items-center justify-center"
-        aria-label={t.chat.title}
-      >
-        {isOpen ? (
-          <X className="w-5 h-5 md:w-6 md:h-6 text-white" />
-        ) : (
-          <>
-            <MessageSquare className="w-5 h-5 md:w-6 md:h-6 text-white" />
-            {unread > 0 && (
-              <span className="absolute -top-1 -end-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center font-bold">
-                {unread > 9 ? '9+' : unread}
-              </span>
-            )}
-          </>
-        )}
-      </button>
+      {!isOpen && (
+        <button
+          type="button"
+          onClick={toggleOpen}
+          className="chat-fab fixed z-[100] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-purple-600 shadow-2xl transition-all duration-300 hover:scale-110 hover:from-blue-600 hover:to-purple-700 hover:shadow-purple-500/40"
+          aria-label={t.chat.title}
+        >
+          <MessageSquare className="h-6 w-6 text-white" />
+          {unread > 0 && (
+            <span className="absolute -end-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+              {unread > 9 ? '9+' : unread}
+            </span>
+          )}
+        </button>
+      )}
     </>
   );
 };

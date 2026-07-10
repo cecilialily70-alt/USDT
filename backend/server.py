@@ -295,7 +295,6 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
 class PublicConfig(BaseModel):
     buyRate: float = 4.4
     sellRate: float = 3.3
-    whatsappLink: str = "https://wa.me/972552452669"
 
 class AdminConfig(PublicConfig):
     adminPath: str = DEFAULT_ADMIN_PATH
@@ -821,7 +820,6 @@ async def get_public_config():
     return {
         "buyRate": config.get("buyRate", 4.4),
         "sellRate": config.get("sellRate", 3.3),
-        "whatsappLink": config.get("whatsappLink", "https://wa.me/972552452669")
     }
 
 @app.get("/api/admin/config")
@@ -830,7 +828,6 @@ async def get_admin_config(token_data: dict = Depends(verify_token)):
     return {
         "buyRate": config.get("buyRate", 4.4),
         "sellRate": config.get("sellRate", 3.3),
-        "whatsappLink": config.get("whatsappLink", "https://wa.me/972552452669"),
         "adminPath": resolve_admin_path(config),
         "adminPassword": "",
         "passwordSet": password_is_configured(config),
