@@ -3,8 +3,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { ArrowDownUp, MessageSquare, X } from 'lucide-react';
+import { ArrowLeftRight, MessageSquare, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRate = 3.3 }) => {
@@ -16,14 +15,29 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
   const rate = tradeType === 'buy' ? buyRate : sellRate;
 
   useEffect(() => {
-    if (activeInput === 'usdt' && usdtAmount) {
-      const calculated = (parseFloat(usdtAmount) * rate).toFixed(2);
-      setIlsAmount(calculated);
-    } else if (activeInput === 'ils' && ilsAmount) {
-      const calculated = (parseFloat(ilsAmount) / rate).toFixed(2);
-      setUsdtAmount(calculated);
+    if (!isOpen) {
+      setUsdtAmount('');
+      setIlsAmount('');
+      setActiveInput('usdt');
     }
-  }, [usdtAmount, ilsAmount, activeInput, rate]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (activeInput === 'usdt') {
+      if (!usdtAmount || isNaN(parseFloat(usdtAmount))) {
+        setIlsAmount('');
+        return;
+      }
+      setIlsAmount((parseFloat(usdtAmount) * rate).toFixed(2));
+    } else if (activeInput === 'ils') {
+      if (!ilsAmount || isNaN(parseFloat(ilsAmount))) {
+        setUsdtAmount('');
+        return;
+      }
+      setUsdtAmount((parseFloat(ilsAmount) / rate).toFixed(2));
+    }
+  }, [usdtAmount, ilsAmount, activeInput, rate, isOpen]);
 
   const handleUsdtChange = (e) => {
     const value = e.target.value;
@@ -60,28 +74,23 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="!top-auto !bottom-0 !translate-y-0 sm:!top-[50%] sm:!-translate-y-1/2 w-full sm:max-w-md bg-gradient-to-br from-[#0F1419]/95 to-[#06080F]/95 border-t border-white/10 sm:border rounded-t-3xl sm:rounded-xl backdrop-blur-xl max-h-[85vh] overflow-y-auto pb-8 sm:pb-6">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-bold">
+      <DialogContent className="!top-3 !translate-y-0 sm:!top-[50%] sm:!-translate-y-1/2 w-[calc(100%-1.5rem)] sm:max-w-md bg-gradient-to-br from-[#0F1419]/98 to-[#06080F]/98 border border-white/10 rounded-2xl backdrop-blur-xl p-4 sm:p-6 gap-3 max-h-[48dvh] sm:max-h-none overflow-y-auto">
+        <DialogHeader className="space-y-1 text-start">
+          <DialogTitle className="text-xl sm:text-2xl font-bold">
             <span className="gradient-text">
               {tradeType === 'buy' ? (t.tradeModal?.buyTitle || 'Buy USDT') : (t.tradeModal?.sellTitle || 'Sell USDT')}
             </span>
           </DialogTitle>
-          <DialogDescription className="text-gray-400">
+          <DialogDescription className="text-gray-400 text-sm">
             {t.tradeModal?.subtitle || 'Enter the amount you want to trade'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          <div className="glass-card rounded-xl p-4 text-center">
-            <div className="text-sm text-gray-400 mb-1">{t.tradeModal?.exchangeRate || 'Exchange Rate'}</div>
-            <div className="text-2xl font-bold gradient-text">1 USDT = {rate} ILS</div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="usdt-input" className="text-gray-300">
-              {t.tradeModal?.usdtAmount || 'USDT Amount'}
-            </Label>
+        <div className="flex items-end gap-2 sm:gap-3 py-1">
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <label htmlFor="usdt-input" className="text-xs sm:text-sm text-gray-400 block">
+              USDT
+            </label>
             <div className="relative">
               <Input
                 id="usdt-input"
@@ -91,24 +100,24 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
                 value={usdtAmount}
                 onChange={handleUsdtChange}
                 onFocus={(e) => e.target.select()}
-                className="bg-[#0a0e1a]/50 border-white/10 text-white text-lg h-14 pe-16 focus:border-blue-500 focus:ring-blue-500"
+                className="bg-[#0a0e1a]/50 border-white/10 text-white text-base sm:text-lg h-12 sm:h-14 pe-14 focus:border-blue-500 focus:ring-blue-500"
               />
-              <div className="absolute end-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold pointer-events-none">
+              <span className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-semibold pointer-events-none">
                 USDT
-              </div>
+              </span>
             </div>
           </div>
 
-          <div className="flex justify-center">
-            <div className="p-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 shadow-lg shadow-blue-500/20">
-              <ArrowDownUp className="w-5 h-5 text-white" />
+          <div className="flex h-12 sm:h-14 items-center shrink-0 pb-0">
+            <div className="p-1.5 sm:p-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 shadow-lg shadow-blue-500/20">
+              <ArrowLeftRight className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="ils-input" className="text-gray-300">
-              {t.tradeModal?.ilsAmount || 'ILS Amount'}
-            </Label>
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <label htmlFor="ils-input" className="text-xs sm:text-sm text-gray-400 block">
+              ILS
+            </label>
             <div className="relative">
               <Input
                 id="ils-input"
@@ -118,31 +127,31 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy', buyRate = 4.4, sellRat
                 value={ilsAmount}
                 onChange={handleIlsChange}
                 onFocus={(e) => e.target.select()}
-                className="bg-[#0a0e1a]/50 border-white/10 text-white text-lg h-14 pe-16 focus:border-blue-500 focus:ring-blue-500"
+                className="bg-[#0a0e1a]/50 border-white/10 text-white text-base sm:text-lg h-12 sm:h-14 pe-10 focus:border-blue-500 focus:ring-blue-500"
               />
-              <div className="absolute end-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold pointer-events-none">
-                ₪ ILS
-              </div>
+              <span className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-semibold pointer-events-none">
+                ₪
+              </span>
             </div>
           </div>
+        </div>
 
-          <div className="flex gap-3 pt-4">
-            <Button
-              onClick={onClose}
-              variant="outline"
-              className="flex-1 border-white/10 hover:bg-white/5 text-gray-300 h-12"
-            >
-              <X className="w-4 h-4 me-2" />
-              {t.tradeModal?.cancel || 'Cancel'}
-            </Button>
-            <Button
-              onClick={handleContactSupport}
-              className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white h-12 font-semibold shadow-lg hover:shadow-blue-500/50 transition-all duration-300"
-            >
-              <MessageSquare className="w-4 h-4 me-2" />
-              {t.tradeModal?.contactTrader || 'Contact Support'}
-            </Button>
-          </div>
+        <div className="flex gap-2 sm:gap-3 pt-1">
+          <Button
+            onClick={onClose}
+            variant="outline"
+            className="flex-1 border-white/10 hover:bg-white/5 text-gray-300 h-11 sm:h-12"
+          >
+            <X className="w-4 h-4 me-1.5" />
+            {t.tradeModal?.cancel || 'Cancel'}
+          </Button>
+          <Button
+            onClick={handleContactSupport}
+            className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white h-11 sm:h-12 font-semibold shadow-lg hover:shadow-blue-500/50 transition-all duration-300"
+          >
+            <MessageSquare className="w-4 h-4 me-1.5" />
+            {t.tradeModal?.contactTrader || 'Contact Support'}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

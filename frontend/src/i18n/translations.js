@@ -55,7 +55,7 @@ export const translations = {
     },
     calculator: {
       title: 'Exchange Calculator',
-      subtitle: 'Estimate rates, fees, and totals in seconds',
+      subtitle: 'Enter USDT or ILS to see the converted amount',
       amount: 'Amount',
       youPay: 'Total Payable',
       youReceive: 'Total Received',
@@ -67,7 +67,7 @@ export const translations = {
       invalidAmount: 'Invalid Amount',
       invalidAmountDesc: 'Please enter a valid amount greater than 0',
       calcComplete: 'Calculation Complete',
-      calcCompleteDesc: 'Exchange rate calculated successfully',
+      calcCompleteDesc: 'Amount calculated successfully',
     },
     security: {
       title: 'Institutional-Grade Security',
@@ -310,7 +310,7 @@ export const translations = {
     },
     calculator: {
       title: 'מחשבון המרה',
-      subtitle: 'הערכה מהירה של שער, עמלות וסכום כולל',
+      subtitle: 'הזן USDT או ILS כדי לראות את הסכום המומר',
       amount: 'סכום',
       youPay: 'סכום לתשלום כולל',
       youReceive: 'סכום מתקבל',
@@ -322,7 +322,7 @@ export const translations = {
       invalidAmount: 'סכום לא חוקי',
       invalidAmountDesc: 'אנא הזן סכום חוקי גדול מ-0',
       calcComplete: 'החישוב הושלם',
-      calcCompleteDesc: 'שער החליפין חושב בהצלחה',
+      calcCompleteDesc: 'הסכום חושב בהצלחה',
     },
     security: {
       title: 'אבטחה ברמה מוסדית',
@@ -565,7 +565,7 @@ export const translations = {
     },
     calculator: {
       title: 'حاسبة الصرف',
-      subtitle: 'احسب أسعار الصرف والرسوم على الفور',
+      subtitle: 'أدخل USDT أو ILS لعرض المبلغ المحوّل',
       amount: 'المبلغ',
       youPay: 'أنت تدفع',
       youReceive: 'أنت تستلم',
@@ -577,7 +577,7 @@ export const translations = {
       invalidAmount: 'مبلغ غير صالح',
       invalidAmountDesc: 'يرجى إدخال مبلغ صالح أكبر من 0',
       calcComplete: 'اكتمل الحساب',
-      calcCompleteDesc: 'تم حساب سعر الصرف بنجاح',
+      calcCompleteDesc: 'تم حساب المبلغ بنجاح',
     },
     security: {
       title: 'أمان على المستوى المؤسسي',

@@ -1,33 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Calculator, TrendingUp, TrendingDown } from 'lucide-react';
-import { toast } from 'sonner';
+import { Calculator, TrendingUp, TrendingDown, ArrowLeftRight } from 'lucide-react';
 import axios from 'axios';
 
 const USDTCalculator = () => {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('buy');
-  const [amount, setAmount] = useState('');
-  const [result, setResult] = useState(null);
-
-  // 初始化汇率状态
+  const [usdtAmount, setUsdtAmount] = useState('');
+  const [ilsAmount, setIlsAmount] = useState('');
+  const [activeInput, setActiveInput] = useState('usdt');
   const [config, setConfig] = useState({
     buyRate: 4.4,
     sellRate: 3.3,
   });
 
-  // 组件加载时获取后台配置
   useEffect(() => {
     fetchConfig();
   }, []);
 
   const fetchConfig = async () => {
     try {
-      // 为了完美适配 Vercel，这里直接使用相对路径，省去配置环境变量的烦恼
       const response = await axios.get('/api/config');
       if (response.data) {
         setConfig(response.data);
@@ -37,45 +31,92 @@ const USDTCalculator = () => {
     }
   };
 
-  const processingFee = 0.02; // 2% 处理费
+  const rate = activeTab === 'buy' ? config.buyRate : config.sellRate;
 
-  const calculateExchange = () => {
-    if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
-      toast(t.calculator.invalidAmount || t.tradeModal.errorTitle, {
-        description: t.calculator.invalidAmountDesc || t.tradeModal.errorAmount,
-      });
-      return;
+  useEffect(() => {
+    if (activeInput === 'usdt') {
+      if (!usdtAmount || isNaN(parseFloat(usdtAmount))) {
+        setIlsAmount('');
+        return;
+      }
+      setIlsAmount((parseFloat(usdtAmount) * rate).toFixed(2));
+    } else if (activeInput === 'ils') {
+      if (!ilsAmount || isNaN(parseFloat(ilsAmount))) {
+        setUsdtAmount('');
+        return;
+      }
+      setUsdtAmount((parseFloat(ilsAmount) / rate).toFixed(2));
     }
+  }, [usdtAmount, ilsAmount, activeInput, rate]);
 
-    const amountNum = parseFloat(amount);
-    const isBuying = activeTab === 'buy';
-    
-    // 1. 获取汇率
-    const rate = isBuying ? config.buyRate : config.sellRate;
-    
-    // 2. 算出对应的法币总额 (ILS)
-    const convertedAmountILS = amountNum * rate;
-    
-    // 3. 计算法币的 2% 手续费 (修复单位错误的地方)
-    const feeILS = convertedAmountILS * processingFee;
-    
-    // 4. 计算最终到手/需要支付的法币
-    // 买入：用户需支付 = 兑换额 + 手续费
-    // 卖出：用户会收到 = 兑换额 - 手续费
-    const total = isBuying ? convertedAmountILS + feeILS : convertedAmountILS - feeILS;
-
-    setResult({
-      amount: amountNum,
-      rate: rate,
-      fee: feeILS,
-      total: total,
-      type: activeTab
-    });
-
-    toast(t.calculator.calcComplete, {
-      description: t.calculator.calcCompleteDesc,
-    });
+  const handleTabChange = (value) => {
+    setActiveTab(value);
+    setUsdtAmount('');
+    setIlsAmount('');
+    setActiveInput('usdt');
   };
+
+  const handleUsdtChange = (e) => {
+    const value = e.target.value;
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setActiveInput('usdt');
+      setUsdtAmount(value);
+    }
+  };
+
+  const handleIlsChange = (e) => {
+    const value = e.target.value;
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setActiveInput('ils');
+      setIlsAmount(value);
+    }
+  };
+
+  const AmountRow = () => (
+    <div className="flex items-end gap-2 sm:gap-3">
+      <div className="flex-1 min-w-0 space-y-2">
+        <label className="text-sm text-gray-300 block">USDT</label>
+        <div className="relative">
+          <Input
+            type="text"
+            inputMode="decimal"
+            placeholder="0.00"
+            value={usdtAmount}
+            onChange={handleUsdtChange}
+            onFocus={(e) => e.target.select()}
+            className="bg-[#0B0F19] border-white/10 text-white text-lg h-14 pe-14"
+          />
+          <span className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-semibold pointer-events-none">
+            USDT
+          </span>
+        </div>
+      </div>
+
+      <div className="flex h-14 items-center shrink-0">
+        <div className="p-2 rounded-full bg-[#26A17B]/20 border border-[#26A17B]/40">
+          <ArrowLeftRight className="w-5 h-5 text-[#26A17B]" />
+        </div>
+      </div>
+
+      <div className="flex-1 min-w-0 space-y-2">
+        <label className="text-sm text-gray-300 block">ILS</label>
+        <div className="relative">
+          <Input
+            type="text"
+            inputMode="decimal"
+            placeholder="0.00"
+            value={ilsAmount}
+            onChange={handleIlsChange}
+            onFocus={(e) => e.target.select()}
+            className="bg-[#0B0F19] border-white/10 text-white text-lg h-14 pe-10"
+          />
+          <span className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-semibold pointer-events-none">
+            ₪
+          </span>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <section className="relative py-24 bg-[#0B0F19]">
@@ -92,18 +133,18 @@ const USDTCalculator = () => {
           </p>
         </div>
 
-        <div className="bg-gradient-to-br from-[#1a2332] to-[#0f1621] border border-white/10 rounded-3xl p-8 shadow-2xl">
-          <Tabs defaultValue="buy" className="w-full" onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2 bg-[#0B0F19] p-1 mb-8">
-              <TabsTrigger 
-                value="buy" 
+        <div className="bg-gradient-to-br from-[#1a2332] to-[#0f1621] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl">
+          <Tabs defaultValue="buy" className="w-full" onValueChange={handleTabChange}>
+            <TabsList className="grid w-full grid-cols-2 bg-[#0B0F19] p-1 mb-6">
+              <TabsTrigger
+                value="buy"
                 className="data-[state=active]:bg-[#26A17B] data-[state=active]:text-white flex items-center gap-2"
               >
                 <TrendingUp className="w-4 h-4" />
                 {t.calculator.buy}
               </TabsTrigger>
-              <TabsTrigger 
-                value="sell" 
+              <TabsTrigger
+                value="sell"
                 className="data-[state=active]:bg-[#26A17B] data-[state=active]:text-white flex items-center gap-2"
               >
                 <TrendingDown className="w-4 h-4" />
@@ -111,76 +152,23 @@ const USDTCalculator = () => {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="buy" className="space-y-6">
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="buy-amount" className="text-gray-300 mb-2 block">
-                    {t.calculator.amount} (USDT)
-                  </Label>
-                  <Input
-                    id="buy-amount"
-                    type="number"
-                    placeholder="100"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="bg-[#0B0F19] border-white/10 text-white text-lg h-14"
-                  />
-                </div>
-
-                <Button 
-                  onClick={calculateExchange}
-                  className="w-full bg-[#26A17B] hover:bg-[#1f8a66] text-white h-14 text-lg"
-                >
-                  {t.calculator.calculate}
-                </Button>
-              </div>
+            <TabsContent value="buy" className="mt-0">
+              <AmountRow />
             </TabsContent>
 
-            <TabsContent value="sell" className="space-y-6">
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="sell-amount" className="text-gray-300 mb-2 block">
-                    {t.calculator.amount} (USDT)
-                  </Label>
-                  <Input
-                    id="sell-amount"
-                    type="number"
-                    placeholder="100"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="bg-[#0B0F19] border-white/10 text-white text-lg h-14"
-                  />
-                </div>
-
-                <Button 
-                  onClick={calculateExchange}
-                  className="w-full bg-[#26A17B] hover:bg-[#1f8a66] text-white h-14 text-lg"
-                >
-                  {t.calculator.calculate}
-                </Button>
-              </div>
+            <TabsContent value="sell" className="mt-0">
+              <AmountRow />
             </TabsContent>
           </Tabs>
 
-          {/* Results */}
-          {result && (
-            <div className="mt-8 pt-8 border-t border-white/10 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-400">{t.calculator.exchangeRate}:</span>
-                <span className="text-white font-semibold">1 USDT = {result.rate} ILS</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-400">{t.calculator.fee} (2%):</span>
-                <span className="text-white font-semibold">{result.fee.toFixed(2)} ILS</span>
-              </div>
-              <div className="flex justify-between items-center pt-4 border-t border-white/10">
-                <span className="text-gray-300 text-lg font-semibold">
-                  {result.type === 'buy' ? t.calculator.youPay : t.calculator.youReceive}:
-                </span>
-                <span className="text-[#26A17B] text-2xl font-bold">
-                  {result.total.toFixed(2)} ILS
-                </span>
-              </div>
+          {(usdtAmount || ilsAmount) && (
+            <div className="mt-6 pt-6 border-t border-white/10 flex justify-between items-center gap-3">
+              <span className="text-gray-300 text-base sm:text-lg font-semibold">
+                {activeTab === 'buy' ? t.calculator.youPay : t.calculator.youReceive}:
+              </span>
+              <span className="text-[#26A17B] text-xl sm:text-2xl font-bold shrink-0">
+                {ilsAmount || '0.00'} ILS
+              </span>
             </div>
           )}
         </div>

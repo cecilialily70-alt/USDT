@@ -9,7 +9,7 @@ import axios from 'axios';
 const API = '/api';
 
 const Hero = () => {
-  const { t, isRTL } = useLanguage();
+  const { t } = useLanguage();
   const [floatingIcons, setFloatingIcons] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tradeType, setTradeType] = useState('buy');
@@ -20,7 +20,7 @@ const Hero = () => {
 
   useEffect(() => {
     fetchConfig();
-    
+
     const icons = [
       { symbol: '₿', color: '#F7931A', size: 40, x: 10, y: 20 },
       { symbol: 'Ξ', color: '#627EEA', size: 35, x: 85, y: 15 },
@@ -77,8 +77,6 @@ const Hero = () => {
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center flex flex-col">
-          
-          {/* Badge 永远放第一位 */}
           <div className="order-1 flex justify-center mb-6">
             <Badge className="glass-card border border-blue-500/30 hover:border-blue-500/60 text-sm px-4 py-2 shadow-lg shadow-blue-500/20">
               <CheckCircle2 className="w-4 h-4 me-2 text-blue-400" />
@@ -86,10 +84,9 @@ const Hero = () => {
             </Badge>
           </div>
 
-          {/* Exchange Rate Cards - 手机排第2位，电脑排第5位(最下方) */}
-          <div className="order-2 md:order-5 flex flex-col md:flex-row gap-6 justify-center mb-6 md:mb-12 max-w-4xl mx-auto w-full">
-            <div className="flex-1 glass-card border border-green-500/30 rounded-2xl p-8 hover:border-green-500/60 transition-all duration-300 hover:shadow-xl hover:shadow-green-500/20 metal-shine group">
-              <div className="flex items-center justify-center gap-3 mb-4">
+          <div className="order-2 md:order-5 flex flex-col md:flex-row gap-4 md:gap-6 justify-center mb-6 md:mb-12 max-w-4xl mx-auto w-full">
+            <div className="flex-1 glass-card border border-green-500/30 rounded-2xl p-6 md:p-8 hover:border-green-500/60 transition-all duration-300 hover:shadow-xl hover:shadow-green-500/20 metal-shine">
+              <div className="flex items-center justify-center gap-3 mb-5">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-lg">
                   <TrendingUp className="w-6 h-6 text-white" />
                 </div>
@@ -98,20 +95,16 @@ const Hero = () => {
                   <span className="text-xl">₪</span>
                 </div>
               </div>
-              <div className="text-sm text-gray-400 mb-2">{t.hero.buyUSDT}</div>
-              <div className="text-3xl font-bold gradient-text mb-4">
-                1 USDT = {config.buyRate} ILS
-              </div>
               <Button
                 onClick={() => handleTrade('buy')}
-                className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold shadow-lg hover:shadow-green-500/50 transition-all duration-300"
+                className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold shadow-lg hover:shadow-green-500/50 transition-all duration-300 h-12"
               >
                 {t.hero.buyUSDT}
               </Button>
             </div>
 
-            <div className="flex-1 glass-card border border-blue-500/30 rounded-2xl p-8 hover:border-blue-500/60 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/20 metal-shine group">
-              <div className="flex items-center justify-center gap-3 mb-4">
+            <div className="flex-1 glass-card border border-blue-500/30 rounded-2xl p-6 md:p-8 hover:border-blue-500/60 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/20 metal-shine">
+              <div className="flex items-center justify-center gap-3 mb-5">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-lg">
                   <span className="text-xl">₪</span>
                 </div>
@@ -120,34 +113,26 @@ const Hero = () => {
                   <span className="text-xl">₮</span>
                 </div>
               </div>
-              <div className="text-sm text-gray-400 mb-2">{t.hero.sellUSDT}</div>
-              <div className="text-3xl font-bold gradient-text mb-4">
-                1 USDT = {config.sellRate} ILS
-              </div>
               <Button
                 onClick={() => handleTrade('sell')}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold shadow-lg hover:shadow-blue-500/50 transition-all duration-300"
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold shadow-lg hover:shadow-blue-500/50 transition-all duration-300 h-12"
               >
                 {t.hero.sellUSDT}
               </Button>
             </div>
           </div>
 
-          {/* Main Title - 手机排第3位，电脑排第2位 */}
           <h1 className="order-3 md:order-2 text-5xl md:text-7xl font-bold text-white mb-6 leading-tight mt-6 md:mt-0">
             <span className="gradient-text">{t.hero.title}</span>
           </h1>
 
-          {/* Subtitle - 手机排第4位，电脑排第3位 */}
           <h2 className="order-4 md:order-3 text-2xl md:text-3xl font-semibold text-blue-300 mb-4">
             {t.hero.subtitle}
           </h2>
 
-          {/* Description - 手机排第5位，电脑排第4位 */}
           <p className="order-5 md:order-4 text-gray-400 text-lg md:text-xl mb-12 max-w-3xl mx-auto leading-relaxed">
             {t.hero.description}
           </p>
-
         </div>
       </div>
 
