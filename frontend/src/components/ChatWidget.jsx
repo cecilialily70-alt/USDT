@@ -57,6 +57,8 @@ const ChatWidget = () => {
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [chatBlocked, setChatBlocked] = useState(false);
+  const chatBlockedRef = useRef(false);
   const sessionId = useRef(getOrCreateSessionId());
   const messagesEndRef = useRef(null);
   const lastSinceRef = useRef(null);
@@ -82,13 +84,31 @@ const ChatWidget = () => {
     });
   }, []);
 
+  const handleChatApiError = useCallback((err) => {
+    if (err?.response?.status === 403 && err.response?.data?.detail === 'BLACKLISTED') {
+      chatBlockedRef.current = true;
+      setChatBlocked(true);
+      setPhoneError(t.errors.blacklisted);
+      return true;
+    }
+    return false;
+  }, [t]);
+
+  const clearChatBlocked = useCallback(() => {
+    if (!chatBlockedRef.current) return;
+    chatBlockedRef.current = false;
+    setChatBlocked(false);
+    setPhoneError('');
+  }, []);
+
   const syncFromServer = useCallback(async () => {
-    if (needsRegister) return;
+    if (needsRegister || chatBlockedRef.current) return;
     try {
       const res = await axios.get(`${API}/chat/sync`, {
         params: visitorChatParams(sessionId.current, visitorPhone),
         headers: visitorChatHeaders(visitorPhone),
       });
+      clearChatBlocked();
       const serverMsgs = res.data.messages || [];
       const serverUnread = res.data.unread_visitor || 0;
 
@@ -97,10 +117,12 @@ const ChatWidget = () => {
       if (!isOpen) {
         setUnread(serverUnread);
       }
-    } catch {
-      // keep local state on network error
+    } catch (err) {
+      if (!handleChatApiError(err)) {
+        // keep local state on network error
+      }
     }
-  }, [needsRegister, isOpen, applyMessages, visitorPhone]);
+  }, [needsRegister, isOpen, applyMessages, visitorPhone, handleChatApiError, clearChatBlocked]);
 
   const initSession = useCallback(async (name, phone) => {
     await axios.post(`${API}/chat/session`, {
@@ -166,15 +188,30 @@ const ChatWidget = () => {
 
   useEffect(() => {
     if (!needsRegister && visitorName && visitorPhone) {
-      initSession(visitorName, visitorPhone).catch(() => {});
-      syncFromServer();
-      const pending = getPendingMessages(sessionId.current);
-      if (pending.length) {
-        setMessages((prev) => mergeMessages(prev, pending));
-        retryPendingMessages();
-      }
+      let cancelled = false;
+      const bootstrap = async () => {
+        try {
+          await initSession(visitorName, visitorPhone);
+          if (cancelled) return;
+          clearChatBlocked();
+        } catch (err) {
+          if (!cancelled) handleChatApiError(err);
+          return;
+        }
+        if (cancelled) return;
+        await syncFromServer();
+        const pending = getPendingMessages(sessionId.current);
+        if (pending.length) {
+          setMessages((prev) => mergeMessages(prev, pending));
+          retryPendingMessages();
+        }
+      };
+      bootstrap();
+      return () => {
+        cancelled = true;
+      };
     }
-  }, [needsRegister, visitorName, visitorPhone, initSession, retryPendingMessages, syncFromServer]);
+  }, [needsRegister, visitorName, visitorPhone, initSession, retryPendingMessages, syncFromServer, handleChatApiError, clearChatBlocked]);
 
   useEffect(() => {
     const handleResume = () => {
@@ -214,13 +251,18 @@ const ChatWidget = () => {
             timeout: 8000,
           }
         )
-        .catch(() => {});
+        .then(() => {
+          clearChatBlocked();
+        })
+        .catch((err) => {
+          handleChatApiError(err);
+        });
     };
 
     ping();
     const id = setInterval(ping, PING_INTERVAL);
     return () => clearInterval(id);
-  }, [needsRegister]);
+  }, [needsRegister, handleChatApiError, clearChatBlocked]);
 
   useEffect(() => {
     if (!needsRegister && !isOpen) {
@@ -328,11 +370,13 @@ const ChatWidget = () => {
       setNeedsRegister(false);
       syncFromServer();
     } catch (err) {
-      setPhoneError(
-        err.response
-          ? getApiErrorMessage(err, t.chat.registerFailed, t)
-          : t.chat.networkError
-      );
+      if (!handleChatApiError(err)) {
+        setPhoneError(
+          err.response
+            ? getApiErrorMessage(err, t.chat.registerFailed, t)
+            : t.chat.networkError
+        );
+      }
     } finally {
       setRegistering(false);
     }
@@ -368,13 +412,15 @@ const ChatWidget = () => {
       if (serverMsg.created_at) {
         lastSinceRef.current = serverMsg.created_at;
       }
-    } catch {
-      savePendingMessage(sessionId.current, { ...optimistic, status: 'failed' });
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.client_message_id === clientMessageId ? { ...m, status: 'failed' } : m
-        )
-      );
+    } catch (err) {
+      if (!handleChatApiError(err)) {
+        savePendingMessage(sessionId.current, { ...optimistic, status: 'failed' });
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.client_message_id === clientMessageId ? { ...m, status: 'failed' } : m
+          )
+        );
+      }
       throw new Error('send failed');
     }
   };
@@ -558,7 +604,7 @@ const ChatWidget = () => {
               {phoneError && (
                 <p className="px-4 pb-1 text-center text-xs text-red-400">{phoneError}</p>
               )}
-              <div className="flex items-center gap-2 border-t border-white/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <div className={`flex items-center gap-2 border-t border-white/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${chatBlocked ? 'pointer-events-none opacity-50' : ''}`}>
                 <input
                   ref={fileInputRef}
                   type="file"

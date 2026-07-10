@@ -38,6 +38,12 @@ const MainLayout = ({ children }) => (
 
 const isHomePath = (path) => path === '/' || path === '';
 
+const AccessLoading = () => (
+  <div className="min-h-screen bg-[#06080F] flex flex-col items-center justify-center px-6 text-center">
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
+  </div>
+);
+
 const RegionBlocked = () => {
   const { t } = useLanguage();
   return (
@@ -51,8 +57,9 @@ const RegionBlocked = () => {
 const AppRoutes = () => {
   const location = useLocation();
   const { t } = useLanguage();
-  const [isAllowed, setIsAllowed] = useState(() => !isHomePath(location.pathname));
-  const [regionBlocked, setRegionBlocked] = useState(false);
+  const [accessState, setAccessState] = useState(() =>
+    isHomePath(location.pathname) ? 'checking' : 'allowed'
+  );
 
   useEffect(() => {
     const interceptor = axios.interceptors.response.use(
@@ -65,13 +72,13 @@ const AppRoutes = () => {
           if (reqUrl.includes('/api/admin/') || onAdminPage) {
             return Promise.reject(error);
           }
-          if (detail === 'ACCESS_DENIED_REGION' || detail === 'BLACKLISTED') {
-            setRegionBlocked(true);
-            toast.error(
-              detail === 'BLACKLISTED'
-                ? (t.errors.blacklisted)
-                : (t.errors.accessDeniedRegion)
-            );
+          // Chat blacklist should only affect chat — not the whole site.
+          if (reqUrl.includes('/api/chat/')) {
+            return Promise.reject(error);
+          }
+          if (detail === 'ACCESS_DENIED_REGION') {
+            setAccessState('blocked');
+            toast.error(t.errors.accessDeniedRegion);
             return Promise.reject(error);
           }
         }
@@ -81,19 +88,18 @@ const AppRoutes = () => {
 
     const checkAccess = async () => {
       if (!isHomePath(location.pathname)) {
-        setIsAllowed(true);
+        setAccessState('allowed');
         return;
       }
+      setAccessState('checking');
       try {
         await axios.get('/api/config');
-        setIsAllowed(true);
-        setRegionBlocked(false);
+        setAccessState('allowed');
       } catch (error) {
         if (error.response?.status === 403) {
-          setRegionBlocked(true);
-          setIsAllowed(false);
+          setAccessState('blocked');
         } else {
-          setIsAllowed(true);
+          setAccessState('allowed');
         }
       }
     };
@@ -105,12 +111,12 @@ const AppRoutes = () => {
     };
   }, [location.pathname, t]);
 
-  if (regionBlocked) {
+  if (accessState === 'blocked') {
     return <RegionBlocked />;
   }
 
-  if (!isAllowed) {
-    return <div className="min-h-screen bg-[#06080F]"></div>;
+  if (accessState === 'checking') {
+    return <AccessLoading />;
   }
 
   return (

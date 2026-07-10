@@ -38,7 +38,7 @@ export const mergeMessages = (prev, incoming) => {
   [...prev, ...incoming].forEach(upsert);
 
   return Array.from(map.values()).sort((a, b) =>
-    a.created_at.localeCompare(b.created_at)
+    (a.created_at || '').localeCompare(b.created_at || '')
   );
 };
 
