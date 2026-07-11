@@ -142,7 +142,7 @@ const ChatWidget = () => {
         // keep local state on network error
       }
     }
-  }, [needsRegister, visitorPhone, applyMessages, handleChatApiError, clearChatBlocked, isOpen, notifyNewAdminMessages]);
+  }, [needsRegister, visitorPhone, applyMessages, handleChatApiError, clearChatBlocked, notifyNewAdminMessages]);
 
   const syncFromServer = useCallback(async () => {
     if (needsRegister || chatBlockedRef.current) return;
