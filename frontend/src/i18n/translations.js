@@ -104,7 +104,7 @@ export const translations = {
       quickLinksTitle: 'Quick Links',
       legalTitle: 'Legal',
       brand: 'Exchange',
-      pageTitle: 'Exchange | Premium USDT ⇄ ILS',
+      pageTitle: 'Exchange | ILS/USDT',
     },
     notice: {
       kyc: 'Compliance note: larger transactions may require identity verification to meet regulatory requirements.'
@@ -372,7 +372,7 @@ export const translations = {
       quickLinksTitle: 'קישורים מהירים',
       legalTitle: 'מידע משפטי',
       brand: 'Exchange',
-      pageTitle: 'Exchange | USDT ⇄ ILS',
+      pageTitle: 'Exchange | ILS/USDT',
     },
     notice: {
       kyc: 'עסקאות בסכומים גבוהים עשויות לדרוש אימות זהות לצורך עמידה בדרישות רגולטוריות ואבטחה.'
@@ -640,7 +640,7 @@ export const translations = {
       quickLinksTitle: 'روابط سريعة',
       legalTitle: 'المعلومات القانونية',
       brand: 'Exchange',
-      pageTitle: 'Exchange | USDT ⇄ ILS',
+      pageTitle: 'Exchange | ILS/USDT',
     },
     notice: {
       kyc: 'قد تتطلب المعاملات الكبيرة التحقق من الهوية للامتثال والأمان.'
