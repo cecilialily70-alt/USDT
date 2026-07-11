@@ -93,13 +93,21 @@ export const formatIsraeliPhoneInput = (raw) => {
 
 export const LOCALE_MAP = { he: 'he-IL', en: 'en-IL', ar: 'ar-IL' };
 
-/** Visitor pings every 5s; allow one missed heartbeat. */
-export const ONLINE_THRESHOLD_SEC = 12;
+/** Visitor pings every 5s; allow several missed heartbeats + poll delay. */
+export const ONLINE_THRESHOLD_SEC = 25;
+
+export const parseUtcIso = (iso) => {
+  if (!iso) return null;
+  const raw = String(iso).trim();
+  if (!raw) return null;
+  const normalized = /[zZ]|[+-]\d{2}:\d{2}$/.test(raw) ? raw : `${raw}Z`;
+  const dt = new Date(normalized);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
 
 export const isVisitorOnline = (lastSeenAt, thresholdSec = ONLINE_THRESHOLD_SEC) => {
-  if (!lastSeenAt) return false;
-  const dt = new Date(lastSeenAt);
-  if (Number.isNaN(dt.getTime())) return false;
+  const dt = parseUtcIso(lastSeenAt);
+  if (!dt) return false;
   const age = (Date.now() - dt.getTime()) / 1000;
   return age >= 0 && age <= thresholdSec;
 };

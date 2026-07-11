@@ -1057,8 +1057,12 @@ async def notify_new_message(visitor_name: str, visitor_phone: str, preview: str
     )
     await send_telegram(text)
 
+def utc_now_iso() -> str:
+    """UTC timestamp with Z suffix for correct JS Date parsing."""
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
 async def ensure_session(session_id: str, visitor_name: str, visitor_phone: str, ip: str):
-    now = datetime.utcnow().isoformat()
+    now = utc_now_iso()
     result = await chat_sessions_collection.update_one(
         {"session_id": session_id},
         {
@@ -1088,7 +1092,7 @@ async def touch_visitor_presence(session_id: str):
     """Update last_seen_at so admin can show online/offline."""
     if not session_id:
         return
-    now = datetime.utcnow().isoformat()
+    now = utc_now_iso()
     await chat_sessions_collection.update_one(
         {"session_id": session_id},
         {"$set": {"last_seen_at": now}},
@@ -1371,7 +1375,7 @@ async def get_visitor_messages(
 
     await chat_sessions_collection.update_one(
         {"session_id": session_id},
-        {"$set": {"unread_visitor": 0, "last_seen_at": datetime.utcnow().isoformat()}},
+        {"$set": {"unread_visitor": 0, "last_seen_at": utc_now_iso()}},
     )
 
     return {"messages": messages}
