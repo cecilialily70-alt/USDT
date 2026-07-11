@@ -29,6 +29,7 @@ const NAME_KEY = 'chat_visitor_name';
 const PHONE_KEY = 'chat_visitor_phone';
 const POLL_INTERVAL_OPEN = 3000;
 const PING_INTERVAL = 5000;
+const PING_INTERVAL_HIDDEN = 15000;
 const BG_SYNC_INTERVAL = 10000;
 const FULL_SYNC_EVERY = 10;
 
@@ -289,8 +290,10 @@ const ChatWidget = () => {
   useEffect(() => {
     if (needsRegister) return undefined;
 
+    let timerId = null;
+    let hidden = document.visibilityState === 'hidden';
+
     const ping = () => {
-      if (document.visibilityState === 'hidden') return;
       const phone = localStorage.getItem(PHONE_KEY) || '';
       axios
         .post(
@@ -310,9 +313,24 @@ const ChatWidget = () => {
         });
     };
 
-    ping();
-    const id = setInterval(ping, PING_INTERVAL);
-    return () => clearInterval(id);
+    const schedule = () => {
+      if (timerId) clearInterval(timerId);
+      const interval = hidden ? PING_INTERVAL_HIDDEN : PING_INTERVAL;
+      ping();
+      timerId = setInterval(ping, interval);
+    };
+
+    const onVisibility = () => {
+      hidden = document.visibilityState === 'hidden';
+      schedule();
+    };
+
+    schedule();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      if (timerId) clearInterval(timerId);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [needsRegister, handleChatApiError, clearChatBlocked]);
 
   useEffect(() => {

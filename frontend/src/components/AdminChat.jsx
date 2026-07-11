@@ -14,7 +14,7 @@ import {
   formatChatTime,
   retryRequest,
   getApiErrorMessage,
-  isVisitorOnline,
+  isSessionVisitorOnline,
 } from '../utils/chatHelpers';
 import {
   MAX_IMAGE_SIZE_BYTES,
@@ -57,6 +57,8 @@ const AdminChat = () => {
   const prevUnreadRef = useRef(null);
   const notificationsReadyRef = useRef(false);
   const [blacklistIpInput, setBlacklistIpInput] = useState('');
+
+  const [presenceTick, setPresenceTick] = useState(0);
 
   const getToken = () => localStorage.getItem('admin_token');
 
@@ -129,9 +131,36 @@ const AdminChat = () => {
         }
         return merged;
       });
+      const latestVisitor = [...incoming]
+        .reverse()
+        .find((m) => m?.sender === 'visitor' && m?.created_at);
       setSessions((prev) =>
-        prev.map((s) => (s.session_id === sessionId ? { ...s, unread_admin: 0 } : s))
+        prev.map((s) => {
+          if (s.session_id !== sessionId) return s;
+          const next = { ...s, unread_admin: 0 };
+          if (latestVisitor?.created_at) {
+            next.last_seen_at = latestVisitor.created_at;
+            next.last_message_at = latestVisitor.created_at;
+          }
+          return next;
+        })
       );
+      if (latestVisitor?.created_at) {
+        setSelectedSession((prev) =>
+          prev && prev.session_id === sessionId
+            ? {
+                ...prev,
+                unread_admin: 0,
+                last_seen_at: latestVisitor.created_at,
+                last_message_at: latestVisitor.created_at,
+              }
+            : prev
+        );
+      } else {
+        setSelectedSession((prev) =>
+          prev && prev.session_id === sessionId ? { ...prev, unread_admin: 0 } : prev
+        );
+      }
     } catch (e) {
       if (e.response?.status === 401) return;
     }
@@ -143,6 +172,11 @@ const AdminChat = () => {
     sessionPollRef.current = setInterval(fetchSessions, SESSION_POLL_INTERVAL);
     return () => clearInterval(sessionPollRef.current);
   }, [fetchSessions, fetchBlacklist]);
+
+  useEffect(() => {
+    const id = setInterval(() => setPresenceTick((n) => n + 1), 5000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (selectedSession) {
@@ -390,8 +424,9 @@ const AdminChat = () => {
   };
 
   const sessionPresence = (session) => {
+    void presenceTick;
     if (session?.blacklisted) return { online: false, label: ac.blocked };
-    const online = isVisitorOnline(session?.last_seen_at);
+    const online = isSessionVisitorOnline(session);
     return { online, label: online ? ac.online : ac.offline };
   };
 

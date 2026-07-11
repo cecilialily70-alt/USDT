@@ -112,9 +112,19 @@ export const isVisitorOnline = (lastSeenAt, thresholdSec = ONLINE_THRESHOLD_SEC)
   return age >= 0 && age <= thresholdSec;
 };
 
+/** Online when last_seen_at is fresh, or visitor just messaged (unread + recent activity). */
+export const isSessionVisitorOnline = (session, thresholdSec = ONLINE_THRESHOLD_SEC) => {
+  if (!session) return false;
+  if (isVisitorOnline(session.last_seen_at, thresholdSec)) return true;
+  const unread = Number(session.unread_admin || 0);
+  if (unread > 0 && isVisitorOnline(session.last_message_at, thresholdSec)) return true;
+  return false;
+};
+
 export const formatChatTime = (iso, withDate = false, locale = 'he-IL') => {
   try {
-    const d = new Date(iso);
+    const d = parseUtcIso(iso);
+    if (!d) return '';
     const opts = { hour: '2-digit', minute: '2-digit', hour12: false };
     if (withDate) return d.toLocaleString(locale, { ...opts, day: 'numeric', month: 'short' });
     return d.toLocaleTimeString(locale, opts);

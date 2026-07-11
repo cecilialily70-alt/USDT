@@ -314,11 +314,6 @@ class PublicConfig(BaseModel):
     buyRate: float = 4.4
     sellRate: float = 3.3
 
-class AdminConfig(PublicConfig):
-    adminPath: str = DEFAULT_ADMIN_PATH
-    adminPassword: str = ""
-    passwordSet: bool = False
-
 class AdminConfigUpdate(PublicConfig):
     adminPath: str = DEFAULT_ADMIN_PATH
     adminPassword: str = Field(default="", description="Leave empty to keep current password")
@@ -702,7 +697,10 @@ async def cleanup_expired_chat_data():
         logger.warning("orphan GridFS scan failed: %s", e)
 
     # 3) Remove session rows left without messages (legacy / edge cases)
-    cutoff_iso = cutoff_dt.isoformat()
+    # Use Z-suffixed ISO so lexicographic compare matches utc_now_iso() storage format.
+    cutoff_iso = (datetime.now(timezone.utc) - timedelta(hours=CHAT_RETENTION_HOURS)).replace(
+        microsecond=0
+    ).isoformat().replace("+00:00", "Z")
     stale_sessions = await chat_sessions_collection.find(
         {"last_message_at": {"$lt": cutoff_iso}},
         {"session_id": 1},
@@ -1166,7 +1164,8 @@ async def create_message_record(
         if existing:
             return serialize_message(existing, session_id)
 
-    now = datetime.utcnow().isoformat()
+    now = utc_now_iso()
+    now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
     message_id = str(uuid.uuid4())
     preview = content[:100] if content else ("[Image]" if msg_type == "image" else "")
     if msg_type == "image" and filename:
@@ -1179,7 +1178,7 @@ async def create_message_record(
         "type": msg_type,
         "content": content,
         "created_at": now,
-        "created_at_dt": datetime.utcnow(),
+        "created_at_dt": now_dt,
     }
     if client_message_id:
         message["client_message_id"] = client_message_id
@@ -1200,10 +1199,13 @@ async def create_message_record(
                 return serialize_message(existing, session_id)
         raise
     inc_field = "unread_admin" if sender == "visitor" else "unread_visitor"
+    session_set = {"last_message_at": now, "last_message": preview[:100]}
+    if sender == "visitor":
+        session_set["last_seen_at"] = now
     await chat_sessions_collection.update_one(
         {"session_id": session_id},
         {
-            "$set": {"last_message_at": now, "last_message": preview[:100]},
+            "$set": session_set,
             "$inc": {inc_field: 1},
             "$setOnInsert": {
                 "session_id": session_id,
@@ -1334,7 +1336,7 @@ async def ping_visitor_presence(
     phone = visitor_phone_from_request(request, visitor_phone)
     await assert_visitor_session_access(session_id, phone, require_existing=True)
     await touch_visitor_presence(session_id)
-    return {"ok": True, "ts": datetime.utcnow().isoformat()}
+    return {"ok": True, "ts": utc_now_iso()}
 
 
 @app.get("/api/chat/sync")
@@ -1415,7 +1417,6 @@ async def send_visitor_message(
         content=content,
         client_message_id=data.client_message_id,
     )
-    await touch_visitor_presence(session_id)
     background_tasks.add_task(
         notify_new_message, visitor_name, visitor_phone, content, session_id, "text"
     )
@@ -1461,7 +1462,6 @@ async def upload_visitor_image(
         filename=filename,
         mime_type=mime_type,
     )
-    await touch_visitor_presence(session_id)
     background_tasks.add_task(
         notify_new_message, vname, vphone, f"[Image] {filename}", session_id, "image"
     )
