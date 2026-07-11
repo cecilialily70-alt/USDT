@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
+import { PublicConfigProvider, usePublicConfig } from './contexts/PublicConfigContext';
 import { Toaster, toast } from 'sonner';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
@@ -57,6 +58,7 @@ const RegionBlocked = () => {
 const AppRoutes = () => {
   const location = useLocation();
   const { t } = useLanguage();
+  const { loading: configLoading, regionBlocked } = usePublicConfig();
   const [accessState, setAccessState] = useState(() =>
     isHomePath(location.pathname) ? 'checking' : 'allowed'
   );
@@ -72,7 +74,6 @@ const AppRoutes = () => {
           if (reqUrl.includes('/api/admin/') || onAdminPage) {
             return Promise.reject(error);
           }
-          // Chat blacklist should only affect chat — not the whole site.
           if (reqUrl.includes('/api/chat/')) {
             return Promise.reject(error);
           }
@@ -86,30 +87,22 @@ const AppRoutes = () => {
       }
     );
 
-    const checkAccess = async () => {
-      if (!isHomePath(location.pathname)) {
-        setAccessState('allowed');
-        return;
-      }
-      setAccessState('checking');
-      try {
-        await axios.get('/api/config');
-        setAccessState('allowed');
-      } catch (error) {
-        if (error.response?.status === 403) {
-          setAccessState('blocked');
-        } else {
-          setAccessState('allowed');
-        }
-      }
-    };
-
-    checkAccess();
-
     return () => {
       axios.interceptors.response.eject(interceptor);
     };
-  }, [location.pathname, t]);
+  }, [t]);
+
+  useEffect(() => {
+    if (!isHomePath(location.pathname)) {
+      setAccessState('allowed');
+      return;
+    }
+    if (configLoading) {
+      setAccessState('checking');
+      return;
+    }
+    setAccessState(regionBlocked ? 'blocked' : 'allowed');
+  }, [location.pathname, configLoading, regionBlocked]);
 
   if (accessState === 'blocked') {
     return <RegionBlocked />;
@@ -139,9 +132,11 @@ const AppRoutes = () => {
 function App() {
   return (
     <LanguageProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
+      <PublicConfigProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </PublicConfigProvider>
     </LanguageProvider>
   );
 }

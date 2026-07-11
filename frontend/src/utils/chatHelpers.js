@@ -93,6 +93,17 @@ export const formatIsraeliPhoneInput = (raw) => {
 
 export const LOCALE_MAP = { he: 'he-IL', en: 'en-IL', ar: 'ar-IL' };
 
+/** Visitor pings every 5s; allow one missed heartbeat. */
+export const ONLINE_THRESHOLD_SEC = 12;
+
+export const isVisitorOnline = (lastSeenAt, thresholdSec = ONLINE_THRESHOLD_SEC) => {
+  if (!lastSeenAt) return false;
+  const dt = new Date(lastSeenAt);
+  if (Number.isNaN(dt.getTime())) return false;
+  const age = (Date.now() - dt.getTime()) / 1000;
+  return age >= 0 && age <= thresholdSec;
+};
+
 export const formatChatTime = (iso, withDate = false, locale = 'he-IL') => {
   try {
     const d = new Date(iso);

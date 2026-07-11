@@ -8,19 +8,39 @@ import ChatMessageBubble from './ChatMessageBubble';
 import { MessageSquare, Send, Trash2, RefreshCw, ImagePlus, Ban } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
-import { mergeMessages, createClientMessageId, formatChatTime, retryRequest, getApiErrorMessage } from '../utils/chatHelpers';
+import {
+  mergeMessages,
+  createClientMessageId,
+  formatChatTime,
+  retryRequest,
+  getApiErrorMessage,
+  isVisitorOnline,
+} from '../utils/chatHelpers';
 import {
   MAX_IMAGE_SIZE_BYTES,
   isSupportedImageFile,
 } from '../utils/chatConstants';
+import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications';
 
 const API = '/api';
-const POLL_INTERVAL = 1000;
+const SESSION_POLL_INTERVAL = 3000;
+const MESSAGE_POLL_INTERVAL = 2000;
+
+const PresenceDot = ({ online, label }) => (
+  <span className="inline-flex items-center gap-1 text-[10px]">
+    <span
+      className={`w-1.5 h-1.5 rounded-full shrink-0 ${online ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}
+      aria-hidden
+    />
+    <span className={online ? 'text-green-400/90' : 'text-gray-500'}>{label}</span>
+  </span>
+);
 
 const AdminChat = () => {
   const { t, locale } = useLanguage();
   const ac = t.admin.chat;
   const [sessions, setSessions] = useState([]);
+  const [blacklist, setBlacklist] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [messages, setMessages] = useState([]);
   const [reply, setReply] = useState('');
@@ -33,7 +53,9 @@ const AdminChat = () => {
   const lastSinceRef = useRef(null);
   const fileInputRef = useRef(null);
   const replyInputRef = useRef(null);
-  const pollRef = useRef(null);
+  const sessionPollRef = useRef(null);
+  const prevUnreadRef = useRef(null);
+  const notificationsReadyRef = useRef(false);
   const [blacklistIpInput, setBlacklistIpInput] = useState('');
 
   const getToken = () => localStorage.getItem('admin_token');
@@ -43,10 +65,49 @@ const AdminChat = () => {
       const res = await axios.get(`${API}/admin/chat/sessions`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
-      setSessions(res.data.sessions || []);
+      const incoming = res.data.sessions || [];
+      const totalUnread = incoming.reduce((sum, s) => sum + (s.unread_admin || 0), 0);
+      if (prevUnreadRef.current !== null && totalUnread > prevUnreadRef.current) {
+        showBrowserNotification({
+          title: ac.newVisitorTitle,
+          body: ac.newVisitorBody,
+          tag: 'admin-chat',
+        });
+      }
+      prevUnreadRef.current = totalUnread;
+      setSessions((prev) => {
+        const selectedId = selectedSession?.session_id;
+        if (!selectedId) return incoming;
+        return incoming.map((s) =>
+          s.session_id === selectedId ? { ...s, unread_admin: 0 } : s
+        );
+      });
+      setSelectedSession((prev) => {
+        if (!prev) return prev;
+        const updated = incoming.find((s) => s.session_id === prev.session_id);
+        return updated ? { ...updated, unread_admin: 0 } : prev;
+      });
     } catch (e) {
       if (e.response?.status === 401) return;
       console.error('Failed to fetch chat sessions', e);
+    }
+  }, [selectedSession?.session_id, ac.newVisitorTitle, ac.newVisitorBody]);
+
+  useEffect(() => {
+    if (notificationsReadyRef.current) return undefined;
+    notificationsReadyRef.current = true;
+    requestNotificationPermission();
+    return undefined;
+  }, []);
+
+  const fetchBlacklist = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/admin/blacklist`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      setBlacklist(res.data.blacklist || []);
+    } catch (e) {
+      if (e.response?.status === 401) return;
     }
   }, []);
 
@@ -68,6 +129,9 @@ const AdminChat = () => {
         }
         return merged;
       });
+      setSessions((prev) =>
+        prev.map((s) => (s.session_id === sessionId ? { ...s, unread_admin: 0 } : s))
+      );
     } catch (e) {
       if (e.response?.status === 401) return;
     }
@@ -75,9 +139,10 @@ const AdminChat = () => {
 
   useEffect(() => {
     fetchSessions();
-    pollRef.current = setInterval(fetchSessions, POLL_INTERVAL);
-    return () => clearInterval(pollRef.current);
-  }, [fetchSessions]);
+    fetchBlacklist();
+    sessionPollRef.current = setInterval(fetchSessions, SESSION_POLL_INTERVAL);
+    return () => clearInterval(sessionPollRef.current);
+  }, [fetchSessions, fetchBlacklist]);
 
   useEffect(() => {
     if (selectedSession) {
@@ -85,7 +150,7 @@ const AdminChat = () => {
       fetchMessages(selectedSession.session_id, null, true);
       const msgPoll = setInterval(
         () => fetchMessages(selectedSession.session_id, lastSinceRef.current),
-        POLL_INTERVAL
+        MESSAGE_POLL_INTERVAL
       );
       return () => clearInterval(msgPoll);
     }
@@ -97,14 +162,16 @@ const AdminChat = () => {
 
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     if (forceScrollToBottomRef.current || nearBottom) {
-      // 用户不在底部时不要强制滚动，避免“乱动”
       messagesEndRef.current.scrollIntoView({ behavior: forceScrollToBottomRef.current ? 'auto' : 'smooth' });
       forceScrollToBottomRef.current = false;
     }
   }, [messages]);
 
   const handleSelectSession = (session) => {
-    setSelectedSession(session);
+    setSelectedSession({ ...session, unread_admin: 0 });
+    setSessions((prev) =>
+      prev.map((s) => (s.session_id === session.session_id ? { ...s, unread_admin: 0 } : s))
+    );
     setMessages([]);
     lastSinceRef.current = null;
     forceScrollToBottomRef.current = true;
@@ -133,6 +200,7 @@ const AdminChat = () => {
         );
       }
       fetchSessions();
+      fetchBlacklist();
       setSelectedSession((prev) => {
         if (!prev) return prev;
         if (prev.visitor_ip !== ip) return prev;
@@ -209,6 +277,22 @@ const AdminChat = () => {
     } finally {
       setSending(false);
       replyInputRef.current?.focus();
+    }
+  };
+
+  const handleRetryMessage = async (msg) => {
+    if (!selectedSession || sending || uploading) return;
+    if (msg.type !== 'text' || !msg.content?.trim()) {
+      toast.error(ac.imageRetryHint);
+      return;
+    }
+    setSending(true);
+    try {
+      await sendTextReply(msg.content.trim(), msg.client_message_id || createClientMessageId());
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, ac.sendFailed, t));
+    } finally {
+      setSending(false);
     }
   };
 
@@ -300,9 +384,15 @@ const AdminChat = () => {
 
   const handleRefresh = async () => {
     setLoading(true);
-    await fetchSessions();
+    await Promise.all([fetchSessions(), fetchBlacklist()]);
     if (selectedSession) await fetchMessages(selectedSession.session_id, null, true);
     setLoading(false);
+  };
+
+  const sessionPresence = (session) => {
+    if (session?.blacklisted) return { online: false, label: ac.blocked };
+    const online = isVisitorOnline(session?.last_seen_at);
+    return { online, label: online ? ac.online : ac.offline };
   };
 
   const totalUnread = sessions.reduce((sum, s) => sum + (s.unread_admin || 0), 0);
@@ -342,72 +432,91 @@ const AdminChat = () => {
                 <Ban className="w-4 h-4" />
               </Button>
             </div>
+            <p className="text-white/60 text-[10px] mt-3 mb-1">{ac.blacklistTitle}</p>
+            <div className="max-h-24 overflow-y-auto space-y-1">
+              {blacklist.length === 0 ? (
+                <p className="text-gray-600 text-[10px]">{ac.blacklistEmpty}</p>
+              ) : (
+                blacklist.map((item) => (
+                  <div key={item.ip} className="flex justify-between items-center gap-2">
+                    <span className="text-gray-400 font-mono text-[10px] truncate" dir="ltr">{item.ip}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-red-400/70 hover:text-red-300 shrink-0"
+                      onClick={() => toggleBlacklistByIp(item.ip, true)}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
           {sessions.length === 0 ? (
             <p className="text-gray-500 text-center py-8 text-sm">{ac.noConversations}</p>
           ) : (
-            sessions.map((session) => (
-              <button
-                key={session.session_id}
-                onClick={() => handleSelectSession(session)}
-                className={`w-full text-start p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${
-                  selectedSession?.session_id === session.session_id ? 'bg-white/10' : ''
-                }`}
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-white font-medium text-sm truncate">
-                        {session.visitor_name || ac.guest}
-                      </span>
-                      {(session.unread_admin || 0) > 0 && (
-                        <Badge className="bg-red-500/80 text-white border-none text-[10px] px-1.5 py-0">
-                          {session.unread_admin}
-                        </Badge>
+            sessions.map((session) => {
+              const presence = sessionPresence(session);
+              return (
+                <button
+                  key={session.session_id}
+                  onClick={() => handleSelectSession(session)}
+                  className={`w-full text-start p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${
+                    selectedSession?.session_id === session.session_id ? 'bg-white/10' : ''
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-white font-medium text-sm truncate">
+                          {session.visitor_name || ac.guest}
+                        </span>
+                        {(session.unread_admin || 0) > 0 && (
+                          <Badge className="bg-red-500/80 text-white border-none text-[10px] px-1.5 py-0">
+                            {session.unread_admin}
+                          </Badge>
+                        )}
+                        <PresenceDot online={presence.online} label={presence.label} />
+                      </div>
+                      {session.visitor_phone && (
+                        <p className="text-blue-400/80 text-xs font-mono mt-0.5" dir="ltr">
+                          {session.visitor_phone}
+                        </p>
                       )}
-                    </div>
-                    {(session.blacklisted) && (
-                      <Badge className="bg-red-600/80 text-white border-none text-[10px] px-1.5 py-0 me-1">
-                        {ac.blocked}
-                      </Badge>
-                    )}
-                    {session.visitor_phone && (
-                      <p className="text-blue-400/80 text-xs font-mono mt-0.5" dir="ltr">
-                        {session.visitor_phone}
+                      <p className="text-gray-500 text-xs truncate mt-1">
+                        {session.last_message || ac.noMessages}
                       </p>
-                    )}
-                    <p className="text-gray-500 text-xs truncate mt-1">
-                      {session.last_message || ac.noMessages}
-                    </p>
-                    <p className="text-gray-600 text-[10px] mt-1">
-                      {session.visitor_ip} · {formatChatTime(session.last_message_at, true, locale)}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-400/60 hover:text-red-400 hover:bg-red-500/10 shrink-0 ms-2"
-                    onClick={(e) => handleDeleteSession(session.session_id, e)}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
+                      <p className="text-gray-600 text-[10px] mt-1">
+                        {session.visitor_ip} · {formatChatTime(session.last_message_at, true, locale)}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-400/60 hover:text-red-400 hover:bg-red-500/10 shrink-0 ms-2"
+                      onClick={(e) => handleDeleteSession(session.session_id, e)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
 
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={
-                      session.blacklisted
-                        ? 'text-amber-300/80 hover:text-amber-200 hover:bg-amber-500/10 shrink-0 ms-2'
-                        : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10 shrink-0 ms-2'
-                    }
-                    onClick={(e) => handleBlacklistForSession(session, e)}
-                    title={session.blacklisted ? ac.unblockTitle : ac.blockTitle}
-                  >
-                    <Ban className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              </button>
-            ))
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={
+                        session.blacklisted
+                          ? 'text-amber-300/80 hover:text-amber-200 hover:bg-amber-500/10 shrink-0 ms-2'
+                          : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10 shrink-0 ms-2'
+                      }
+                      onClick={(e) => handleBlacklistForSession(session, e)}
+                      title={session.blacklisted ? ac.unblockTitle : ac.blockTitle}
+                    >
+                      <Ban className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
 
@@ -415,7 +524,10 @@ const AdminChat = () => {
           {selectedSession ? (
             <>
               <div className="px-4 py-3 border-b border-white/10 bg-black/20">
-                <p className="text-white font-medium text-sm">{selectedSession.visitor_name}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-white font-medium text-sm">{selectedSession.visitor_name}</p>
+                  <PresenceDot {...sessionPresence(selectedSession)} />
+                </div>
                 {selectedSession.visitor_phone && (
                   <p className="text-blue-400/80 text-xs font-mono" dir="ltr">{selectedSession.visitor_phone}</p>
                 )}
@@ -428,6 +540,7 @@ const AdminChat = () => {
                     key={msg.message_id || msg.client_message_id}
                     msg={msg}
                     isOwn={msg.sender === 'admin'}
+                    onRetry={msg.status === 'failed' ? () => handleRetryMessage(msg) : undefined}
                   />
                 ))}
                 <div ref={messagesEndRef} />

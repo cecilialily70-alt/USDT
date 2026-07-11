@@ -1,35 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { usePublicConfig } from '../contexts/PublicConfigContext';
 import { Input } from './ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Calculator, TrendingUp, TrendingDown, ArrowLeftRight } from 'lucide-react';
-import axios from 'axios';
 
 const USDTCalculator = () => {
   const { t } = useLanguage();
+  const { config } = usePublicConfig();
   const [activeTab, setActiveTab] = useState('buy');
   const [usdtAmount, setUsdtAmount] = useState('');
   const [ilsAmount, setIlsAmount] = useState('');
   const [activeInput, setActiveInput] = useState('usdt');
-  const [config, setConfig] = useState({
-    buyRate: 4.4,
-    sellRate: 3.3,
-  });
-
-  useEffect(() => {
-    fetchConfig();
-  }, []);
-
-  const fetchConfig = async () => {
-    try {
-      const response = await axios.get('/api/config');
-      if (response.data) {
-        setConfig(response.data);
-      }
-    } catch (error) {
-      console.log('Using default config');
-    }
-  };
 
   const rate = activeTab === 'buy' ? config.buyRate : config.sellRate;
 

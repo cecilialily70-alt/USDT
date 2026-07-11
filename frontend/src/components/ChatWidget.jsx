@@ -21,14 +21,16 @@ import {
   MAX_IMAGE_SIZE_BYTES,
   isSupportedImageFile,
 } from '../utils/chatConstants';
+import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications';
 
 const API = '/api';
 const SESSION_KEY = 'chat_session_id';
 const NAME_KEY = 'chat_visitor_name';
 const PHONE_KEY = 'chat_visitor_phone';
-const POLL_INTERVAL = 1500;
+const POLL_INTERVAL_OPEN = 3000;
 const PING_INTERVAL = 5000;
-const BG_SYNC_INTERVAL = 8000;
+const BG_SYNC_INTERVAL = 10000;
+const FULL_SYNC_EVERY = 10;
 
 const getOrCreateSessionId = () => {
   let id = localStorage.getItem(SESSION_KEY);
@@ -66,6 +68,25 @@ const ChatWidget = () => {
   const inputRef = useRef(null);
   const pollRef = useRef(null);
   const pendingFilesRef = useRef(new Map());
+  const lastAdminMsgKeyRef = useRef(null);
+  const notificationsReadyRef = useRef(false);
+
+  const notifyNewAdminMessages = useCallback((serverMsgs) => {
+    const adminMsgs = (serverMsgs || []).filter((m) => m.sender === 'admin' && m.message_id);
+    if (!adminMsgs.length) return;
+    const latest = adminMsgs[adminMsgs.length - 1];
+    const key = latest.message_id || latest.created_at;
+    if (!key) return;
+    if (lastAdminMsgKeyRef.current && key !== lastAdminMsgKeyRef.current) {
+      showBrowserNotification({
+        title: t.chat.newMessageTitle,
+        body: latest.content?.trim() || t.chat.newMessageBody,
+        tag: 'visitor-chat',
+        onClick: () => setIsOpen(true),
+      });
+    }
+    lastAdminMsgKeyRef.current = key;
+  }, [t]);
 
   const applyMessages = useCallback((incoming, isIncremental = false) => {
     setMessages((prev) => {
@@ -101,6 +122,28 @@ const ChatWidget = () => {
     setPhoneError('');
   }, []);
 
+  const fetchOpenMessages = useCallback(async (full = false) => {
+    if (needsRegister || chatBlockedRef.current) return;
+    try {
+      const params = visitorChatParams(sessionId.current, visitorPhone);
+      if (!full && lastSinceRef.current) params.since = lastSinceRef.current;
+      const res = await axios.get(`${API}/chat/messages`, {
+        params,
+        headers: visitorChatHeaders(visitorPhone),
+      });
+      clearChatBlocked();
+      const incoming = res.data.messages || [];
+      applyMessages(incoming, !full && Boolean(lastSinceRef.current));
+      if (incoming.length) {
+        notifyNewAdminMessages(incoming);
+      }
+    } catch (err) {
+      if (!handleChatApiError(err)) {
+        // keep local state on network error
+      }
+    }
+  }, [needsRegister, visitorPhone, applyMessages, handleChatApiError, clearChatBlocked, isOpen, notifyNewAdminMessages]);
+
   const syncFromServer = useCallback(async () => {
     if (needsRegister || chatBlockedRef.current) return;
     try {
@@ -116,13 +159,21 @@ const ChatWidget = () => {
 
       if (!isOpen) {
         setUnread(serverUnread);
+        notifyNewAdminMessages(serverMsgs);
       }
     } catch (err) {
       if (!handleChatApiError(err)) {
         // keep local state on network error
       }
     }
-  }, [needsRegister, isOpen, applyMessages, visitorPhone, handleChatApiError, clearChatBlocked]);
+  }, [needsRegister, isOpen, applyMessages, visitorPhone, handleChatApiError, clearChatBlocked, notifyNewAdminMessages]);
+
+  useEffect(() => {
+    if (needsRegister || notificationsReadyRef.current) return undefined;
+    notificationsReadyRef.current = true;
+    requestNotificationPermission();
+    return undefined;
+  }, [needsRegister]);
 
   const initSession = useCallback(async (name, phone) => {
     await axios.post(`${API}/chat/session`, {
@@ -278,17 +329,22 @@ const ChatWidget = () => {
     if (isOpen && !needsRegister) {
       setUnread(0);
       lastSinceRef.current = null;
-      syncFromServer();
+      let tick = 0;
+      fetchOpenMessages(true);
       pollRef.current = setInterval(() => {
         if (document.visibilityState === 'hidden') return;
-        // Full sync so admin-deleted messages disappear without any visitor notice.
-        syncFromServer();
-      }, POLL_INTERVAL);
+        tick += 1;
+        if (tick % FULL_SYNC_EVERY === 0) {
+          syncFromServer();
+        } else {
+          fetchOpenMessages(false);
+        }
+      }, POLL_INTERVAL_OPEN);
     } else {
       clearInterval(pollRef.current);
     }
     return () => clearInterval(pollRef.current);
-  }, [isOpen, needsRegister, syncFromServer]);
+  }, [isOpen, needsRegister, fetchOpenMessages, syncFromServer]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

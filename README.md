@@ -8,11 +8,11 @@ Compliance-first USDT↔ILS exchange website for Israeli users (default language
 |------|------|
 | `frontend/` | React (CRA + CRACO), i18n `en` / `he` / `ar` |
 | `backend/server.py` | FastAPI + MongoDB (Vercel serverless) |
-| Desktop app | `C:\Users\Administrator\Desktop\源码\程序\后台.py` |
+| Desktop app | `../桌面程序/`（本地运行，不上传 Vercel） |
 
 ## Environment variables
 
-Set these in Vercel (Production / Preview) or `backend/.env` locally:
+Set these in Vercel (Production / Preview). See also `部署环境变量说明.txt`:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -53,30 +53,13 @@ Python Lambda size limit is set via `maxLambdaSize` on the Python build. For `ma
 
 **Image uploads:** capped at **4MB** to stay under Vercel’s serverless request body limit (~4.5MB).
 
-## Local development
-
-```bash
-# Backend
-cd backend
-pip install -r requirements.txt
-# copy .env.example → .env and fill values
-uvicorn server:app --reload --port 8000
-
-# Frontend
-cd frontend
-npm ci
-npm start
-```
-
-Proxy: `frontend/src/setupProxy.js` forwards `/api` → `localhost:8000`.
-
 ## Security notes
 
 - Admin password is hashed (bcrypt); `GET /api/admin/config` never returns the plaintext password.
 - Visitor chat reads require `session_id` + `visitor_phone` (header/query).
 - Chat images use short-lived signed URLs.
 - Login and chat write endpoints are IP rate-limited in MongoDB.
-- Chat data retention: **72 hours** (TTL + cleanup job, including GridFS).
+- Chat data retention: **72 hours** without interaction — session, messages, and images are auto-deleted (TTL + cleanup job, including GridFS).
 
 ## Desktop ops app
 

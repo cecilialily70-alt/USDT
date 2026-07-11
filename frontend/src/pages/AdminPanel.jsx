@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { ArrowLeft, Save, RefreshCw, Link as LinkIcon, KeyRound, Shield, Trash2, Plus } from 'lucide-react';
+import { ArrowLeft, Save, RefreshCw, Link as LinkIcon, KeyRound, Shield, Trash2, Plus, LogOut } from 'lucide-react';
 import AdminChat from '../components/AdminChat';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -107,8 +107,8 @@ const AdminPanel = () => {
     const token = localStorage.getItem('admin_token');
     try {
       const payload = {
-        buyRate: config.buyRate,
-        sellRate: config.sellRate,
+        buyRate: Number.isFinite(Number(config.buyRate)) ? Number(config.buyRate) : undefined,
+        sellRate: Number.isFinite(Number(config.sellRate)) ? Number(config.sellRate) : undefined,
         adminPath: config.adminPath,
         adminPassword: (config.adminPassword || '').trim(),
       };
@@ -177,7 +177,21 @@ const AdminPanel = () => {
   };
 
   const handleInputChange = (field, value) => {
-    setConfig(prev => ({ ...prev, [field]: value }));
+    setConfig((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleRateChange = (field, raw) => {
+    if (raw === '') {
+      handleInputChange(field, '');
+      return;
+    }
+    const n = parseFloat(raw);
+    if (Number.isFinite(n)) handleInputChange(field, n);
+  };
+
+  const handleLogout = () => {
+    clearSession();
+    navigate('/');
   };
 
   const handleLogin = async (e) => {
@@ -233,13 +247,23 @@ const AdminPanel = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#06080F] via-[#0a0e1a] to-[#0F1419] py-12 md:py-20">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-8">
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
           <Button onClick={() => navigate('/')} variant="ghost" className="text-gray-300 hover:text-white hover:bg-white/10 mb-4 -ms-4 transition-all duration-300">
             <ArrowLeft className="w-4 h-4 me-2" />
             {at.backToHome}
           </Button>
           <h1 className="text-3xl md:text-5xl font-bold gradient-text mb-3">{at.panelTitle}</h1>
           <p className="text-gray-400 text-base md:text-lg">{at.panelSubtitle}</p>
+          </div>
+          <Button
+            onClick={handleLogout}
+            variant="outline"
+            className="border-white/15 text-gray-300 hover:text-white hover:bg-white/10 shrink-0"
+          >
+            <LogOut className="w-4 h-4 me-2" />
+            {s.logout}
+          </Button>
         </div>
 
         <div className="mb-6">
@@ -302,7 +326,7 @@ const AdminPanel = () => {
                   type="number"
                   step="0.1"
                   value={config.buyRate}
-                  onChange={(e) => handleInputChange('buyRate', parseFloat(e.target.value))}
+                  onChange={(e) => handleRateChange('buyRate', e.target.value)}
                   className="bg-[#0a0e1a]/80 border-green-500/30 focus:border-green-500 text-white text-base md:text-lg h-12 md:h-14"
                 />
               </div>
@@ -317,7 +341,7 @@ const AdminPanel = () => {
                   type="number"
                   step="0.1"
                   value={config.sellRate}
-                  onChange={(e) => handleInputChange('sellRate', parseFloat(e.target.value))}
+                  onChange={(e) => handleRateChange('sellRate', e.target.value)}
                   className="bg-[#0a0e1a]/80 border-blue-500/30 focus:border-blue-500 text-white text-base md:text-lg h-12 md:h-14"
                 />
               </div>

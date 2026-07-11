@@ -1,26 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { usePublicConfig } from '../contexts/PublicConfigContext';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { CheckCircle2, ArrowDownUp, TrendingUp } from 'lucide-react';
 import TradeModal from './TradeModal';
-import axios from 'axios';
-
-const API = '/api';
 
 const Hero = () => {
   const { t } = useLanguage();
+  const { config } = usePublicConfig();
   const [floatingIcons, setFloatingIcons] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tradeType, setTradeType] = useState('buy');
-  const [config, setConfig] = useState({
-    buyRate: 4.4,
-    sellRate: 3.3,
-  });
 
   useEffect(() => {
-    fetchConfig();
-
     const icons = [
       { symbol: '₿', color: '#F7931A', size: 40, x: 10, y: 20 },
       { symbol: 'Ξ', color: '#627EEA', size: 35, x: 85, y: 15 },
@@ -30,15 +23,6 @@ const Hero = () => {
     ];
     setFloatingIcons(icons);
   }, []);
-
-  const fetchConfig = async () => {
-    try {
-      const response = await axios.get(`${API}/config`);
-      setConfig(response.data);
-    } catch (error) {
-      console.log('Using default config');
-    }
-  };
 
   const handleTrade = (type) => {
     setTradeType(type);

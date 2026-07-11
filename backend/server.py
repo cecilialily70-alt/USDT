@@ -21,7 +21,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, Field
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import Optional
 from pymongo import ReturnDocument
@@ -106,6 +106,8 @@ COUNTRY_CACHE_TTL_SECONDS = 30 * 60
 _country_cache: dict[str, tuple[str, float]] = {}
 CHAT_RETENTION_HOURS = 72
 CHAT_RETENTION_SECONDS = CHAT_RETENTION_HOURS * 60 * 60
+NEW_SESSION_WELCOME_HE = "היי, שירות המרות (ביט/פייבוקס/משיכה ללא כרטיס). איך אפשר לעזור?"
+WELCOME_MESSAGE_CLIENT_ID = "system:welcome"
 CLEANUP_INTERVAL_SECONDS = 10 * 60
 _last_cleanup_run_at = 0.0
 _cleanup_lock = asyncio.Lock()
@@ -605,34 +607,91 @@ async def apply_country_policy_and_maybe_block(
     # 5) fail-open
     return None
 
+def _parse_iso_datetime(value) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        if isinstance(value, datetime):
+            dt = value
+        else:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=None)
+    except Exception:
+        return None
+
+def _session_last_activity(session: dict) -> Optional[datetime]:
+    """Latest of last_message_at, last_seen_at, created_at (naive UTC)."""
+    times = []
+    for key in ("last_message_at", "last_seen_at", "created_at"):
+        dt = _parse_iso_datetime(session.get(key))
+        if dt is not None:
+            times.append(dt)
+    return max(times) if times else None
+
+async def delete_session_completely(session_id: str) -> bool:
+    """Remove one session and all related messages + GridFS images."""
+    if not session_id:
+        return False
+    ensure_mongo_context()
+    img_msgs = await chat_messages_collection.find(
+        {"session_id": session_id, "type": "image"}, {"image_id": 1}
+    ).to_list(500)
+    for msg in img_msgs:
+        image_id = msg.get("image_id")
+        if image_id:
+            try:
+                await delete_image_by_name(image_id)
+            except Exception as e:
+                logger.warning("delete session image %s failed: %s", image_id, e)
+
+    await chat_messages_collection.delete_many({"session_id": session_id})
+    result = await chat_sessions_collection.delete_one({"session_id": session_id})
+    return result.deleted_count > 0
+
 async def cleanup_expired_chat_data():
     ensure_mongo_context()
     cutoff_dt = datetime.utcnow() - timedelta(hours=CHAT_RETENTION_HOURS)
-    cutoff_iso = cutoff_dt.isoformat()
 
-    # Clean GridFS images before deleting messages (avoid orphans)
+    # 1) Drop entire sessions with no interaction for 72+ hours
+    sessions = await chat_sessions_collection.find(
+        {},
+        {"session_id": 1, "last_message_at": 1, "last_seen_at": 1, "created_at": 1},
+    ).to_list(length=5000)
+    for session in sessions:
+        sid = session.get("session_id")
+        if not sid:
+            continue
+        last_activity = _session_last_activity(session)
+        if last_activity is None or last_activity >= cutoff_dt:
+            continue
+        try:
+            await delete_session_completely(sid)
+        except Exception as e:
+            logger.warning("delete stale session %s failed: %s", sid, e)
+
+    # 2) Safety net: purge orphan messages / images older than retention
     old_img_msgs = await chat_messages_collection.find(
         {"type": "image", "created_at_dt": {"$lt": cutoff_dt}},
-        {"image_id": 1}
+        {"image_id": 1},
     ).to_list(length=5000)
-    image_ids = []
+    seen_images = set()
     for msg in old_img_msgs:
         image_id = msg.get("image_id")
-        if image_id and image_id not in image_ids:
-            image_ids.append(image_id)
-    for image_id in image_ids:
-        try:
-            await delete_image_by_name(image_id)
-        except Exception as e:
-            logger.warning("delete expired image %s failed: %s", image_id, e)
+        if image_id and image_id not in seen_images:
+            seen_images.add(image_id)
+            try:
+                await delete_image_by_name(image_id)
+            except Exception as e:
+                logger.warning("delete expired image %s failed: %s", image_id, e)
 
     await chat_messages_collection.delete_many({"created_at_dt": {"$lt": cutoff_dt}})
 
-    # Also purge orphan GridFS files older than retention
     try:
         old_files = await db["chat_images.files"].find(
             {"uploadDate": {"$lt": cutoff_dt}},
-            {"_id": 1, "filename": 1},
+            {"_id": 1},
         ).to_list(length=2000)
         for f in old_files:
             try:
@@ -642,9 +701,11 @@ async def cleanup_expired_chat_data():
     except Exception as e:
         logger.warning("orphan GridFS scan failed: %s", e)
 
+    # 3) Remove session rows left without messages (legacy / edge cases)
+    cutoff_iso = cutoff_dt.isoformat()
     stale_sessions = await chat_sessions_collection.find(
         {"last_message_at": {"$lt": cutoff_iso}},
-        {"session_id": 1}
+        {"session_id": 1},
     ).to_list(length=2000)
     for s in stale_sessions:
         sid = s.get("session_id")
@@ -968,6 +1029,23 @@ async def notify_new_session(visitor_name: str, visitor_phone: str, session_id: 
     )
     await send_telegram(text)
 
+async def send_new_session_welcome(session_id: str):
+    """Auto-greet new visitors once per session (Hebrew welcome from admin side)."""
+    ensure_mongo_context()
+    existing = await chat_messages_collection.find_one(
+        {"session_id": session_id, "client_message_id": WELCOME_MESSAGE_CLIENT_ID},
+        {"_id": 1},
+    )
+    if existing:
+        return
+    await create_message_record(
+        session_id=session_id,
+        sender="admin",
+        msg_type="text",
+        content=NEW_SESSION_WELCOME_HE,
+        client_message_id=WELCOME_MESSAGE_CLIENT_ID,
+    )
+
 async def notify_new_message(visitor_name: str, visitor_phone: str, preview: str, session_id: str, msg_type: str = "text"):
     label = "📷 图片消息" if msg_type == "image" else "💬 新聊天消息"
     text = (
@@ -1216,6 +1294,7 @@ async def create_or_get_chat_session(
             raise HTTPException(status_code=500, detail="SESSION_CREATE_FAILED")
 
         if is_new:
+            await send_new_session_welcome(session_id)
             background_tasks.add_task(notify_new_session, visitor_name, visitor_phone, session_id)
 
         return {
@@ -1516,18 +1595,7 @@ async def upload_admin_image(
 
 @app.delete("/api/admin/chat/sessions/{session_id}")
 async def delete_chat_session(session_id: str, token_data: dict = Depends(verify_token)):
-    img_msgs = await chat_messages_collection.find(
-        {"session_id": session_id, "type": "image"}, {"image_id": 1}
-    ).to_list(500)
-    for msg in img_msgs:
-        if msg.get("image_id"):
-            try:
-                await delete_image_by_name(msg["image_id"])
-            except Exception:
-                pass
-
-    await chat_messages_collection.delete_many({"session_id": session_id})
-    result = await chat_sessions_collection.delete_one({"session_id": session_id})
-    if result.deleted_count == 0:
+    deleted = await delete_session_completely(session_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="SESSION_NOT_FOUND")
     return {"message": "SESSION_DELETED"}
