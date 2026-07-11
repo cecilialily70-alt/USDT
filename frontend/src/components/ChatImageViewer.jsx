@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { X, Download, Copy, ZoomIn, ZoomOut } from 'lucide-react';
 
@@ -6,13 +6,10 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
   const { t, isRTL } = useLanguage();
   const labels = t.chat.imageViewer;
   const [zoomed, setZoomed] = useState(false);
-  const [showActions, setShowActions] = useState(false);
-  const longPressTimer = useRef(null);
 
   useEffect(() => {
     if (!open) {
       setZoomed(false);
-      setShowActions(false);
       return undefined;
     }
     const onKeyDown = (e) => {
@@ -25,13 +22,6 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [open, onClose]);
-
-  const clearLongPress = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
 
   const handleSave = useCallback(async () => {
     if (!imageSrc) return;
@@ -46,7 +36,6 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setShowActions(false);
     } catch {
       window.open(imageSrc, '_blank', 'noopener,noreferrer');
     }
@@ -59,55 +48,58 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
       const blob = await res.blob();
       const type = blob.type || 'image/png';
       await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
-      setShowActions(false);
     } catch {
       window.open(imageSrc, '_blank', 'noopener,noreferrer');
     }
   }, [imageSrc]);
 
-  const handleTouchStart = () => {
-    clearLongPress();
-    longPressTimer.current = setTimeout(() => setShowActions(true), 500);
-  };
-
-  const handleContextMenu = (e) => {
-    e.preventDefault();
-    setShowActions(true);
-  };
-
   if (!open || !imageSrc) return null;
+
+  const toolBtn =
+    'h-10 px-3 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center gap-1.5 text-sm transition-colors';
+  const iconBtn =
+    'w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors';
 
   return (
     <div
-      className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center p-4"
+      className="fixed inset-0 z-[200] bg-black/95 flex flex-col"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       dir={isRTL ? 'rtl' : 'ltr'}
     >
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute top-4 end-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
-        aria-label={labels.close}
+      {/* Top toolbar: zoom · copy/save · close */}
+      <div
+        className="relative z-10 flex items-center justify-between gap-3 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2"
+        onClick={(e) => e.stopPropagation()}
       >
-        <X className="w-5 h-5" />
-      </button>
+        <button
+          type="button"
+          onClick={() => setZoomed((z) => !z)}
+          className={iconBtn}
+          aria-label={zoomed ? labels.zoomOut : labels.zoomIn}
+        >
+          {zoomed ? <ZoomOut className="w-5 h-5" /> : <ZoomIn className="w-5 h-5" />}
+        </button>
 
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setZoomed((z) => !z);
-        }}
-        className="absolute top-4 start-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
-        aria-label={zoomed ? labels.zoomOut : labels.zoomIn}
-      >
-        {zoomed ? <ZoomOut className="w-5 h-5" /> : <ZoomIn className="w-5 h-5" />}
-      </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={handleCopy} className={toolBtn} aria-label={labels.copy}>
+            <Copy className="w-4 h-4" />
+            <span className="hidden sm:inline">{labels.copy}</span>
+          </button>
+          <button type="button" onClick={handleSave} className={toolBtn} aria-label={labels.save}>
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">{labels.save}</span>
+          </button>
+        </div>
+
+        <button type="button" onClick={onClose} className={iconBtn} aria-label={labels.close}>
+          <X className="w-5 h-5" />
+        </button>
+      </div>
 
       <div
-        className="flex-1 w-full flex items-center justify-center overflow-auto"
+        className="flex-1 w-full min-h-0 flex items-center justify-center overflow-auto px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
         onClick={(e) => e.stopPropagation()}
       >
         <img
@@ -116,55 +108,13 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
           className={`transition-transform duration-200 select-none ${
             zoomed
               ? 'max-w-none max-h-none w-auto h-auto cursor-zoom-out'
-              : 'max-w-[min(100%,96vw)] max-h-[min(100%,88vh)] object-contain cursor-zoom-in'
+              : 'max-w-[min(100%,98vw)] max-h-[min(100%,94vh)] object-contain cursor-zoom-in'
           }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            setZoomed((z) => !z);
-          }}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={clearLongPress}
-          onTouchMove={clearLongPress}
-          onTouchCancel={clearLongPress}
-          onContextMenu={handleContextMenu}
+          onClick={() => setZoomed((z) => !z)}
+          onContextMenu={(e) => e.preventDefault()}
           draggable={false}
         />
       </div>
-
-      {showActions && (
-        <div
-          className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 px-4 py-3 rounded-2xl bg-[#1a2332]/95 border border-white/10 shadow-xl"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={handleSave}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm"
-          >
-            <Download className="w-4 h-4" />
-            {labels.save}
-          </button>
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm"
-          >
-            <Copy className="w-4 h-4" />
-            {labels.copy}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowActions(false)}
-            className="px-3 py-2 rounded-xl text-white/60 hover:text-white text-sm"
-          >
-            {labels.cancel}
-          </button>
-        </div>
-      )}
-
-      <p className="absolute bottom-2 text-white/40 text-[10px] pointer-events-none text-center px-4">
-        {labels.hint}
-      </p>
     </div>
   );
 };
