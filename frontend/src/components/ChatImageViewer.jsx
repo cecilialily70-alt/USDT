@@ -56,9 +56,9 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
   if (!open || !imageSrc) return null;
 
   const toolBtn =
-    'h-10 px-3 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center gap-1.5 text-sm transition-colors';
+    'h-10 px-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white inline-flex items-center justify-center gap-2 text-sm font-medium transition-colors whitespace-nowrap';
   const iconBtn =
-    'w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors';
+    'w-10 h-10 shrink-0 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors';
 
   return (
     <div
@@ -70,7 +70,7 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
     >
       {/* Top toolbar: zoom · copy/save · close */}
       <div
-        className="relative z-10 flex items-center justify-between gap-3 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2"
+        className="relative z-10 flex items-center justify-between gap-2 sm:gap-4 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -82,14 +82,14 @@ const ChatImageViewer = ({ open, imageSrc, filename, onClose }) => {
           {zoomed ? <ZoomOut className="w-5 h-5" /> : <ZoomIn className="w-5 h-5" />}
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 sm:gap-4">
           <button type="button" onClick={handleCopy} className={toolBtn} aria-label={labels.copy}>
-            <Copy className="w-4 h-4" />
-            <span className="hidden sm:inline">{labels.copy}</span>
+            <Copy className="w-4 h-4 shrink-0" />
+            <span>{labels.copy}</span>
           </button>
           <button type="button" onClick={handleSave} className={toolBtn} aria-label={labels.save}>
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">{labels.save}</span>
+            <Download className="w-4 h-4 shrink-0" />
+            <span>{labels.save}</span>
           </button>
         </div>
 
