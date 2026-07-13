@@ -47,7 +47,6 @@ const AdminChat = () => {
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const forceScrollToBottomRef = useRef(false);
   const lastSinceRef = useRef(null);
@@ -192,12 +191,18 @@ const AdminChat = () => {
 
   useEffect(() => {
     const el = messagesContainerRef.current;
-    if (!el || !messagesEndRef.current) return;
+    if (!el) return;
 
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     if (forceScrollToBottomRef.current || nearBottom) {
-      messagesEndRef.current.scrollIntoView({ behavior: forceScrollToBottomRef.current ? 'auto' : 'smooth' });
+      // Only scroll the message pane — never scrollIntoView (that resets the whole page).
+      const behavior = forceScrollToBottomRef.current ? 'auto' : 'smooth';
       forceScrollToBottomRef.current = false;
+      if (behavior === 'smooth' && typeof el.scrollTo === 'function') {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
     }
   }, [messages]);
 
@@ -578,7 +583,6 @@ const AdminChat = () => {
                     onRetry={msg.status === 'failed' ? () => handleRetryMessage(msg) : undefined}
                   />
                 ))}
-                <div ref={messagesEndRef} />
               </div>
 
               <div className="p-3 border-t border-white/10 flex gap-2 items-center">
