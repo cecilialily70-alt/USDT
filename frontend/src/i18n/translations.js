@@ -189,8 +189,12 @@ export const translations = {
       backHome: 'Back to home',
       retry: 'Retry',
       panelTitle: 'Admin Panel',
-      panelSubtitle: 'Manage rates, security, and IP access',
+      panelSubtitle: 'Chat and settings',
       backToHome: 'Back to Home',
+      tabs: {
+        chat: 'Chat',
+        settings: 'Settings',
+      },
       login: {
         verifying: 'Verifying...',
         placeholder: 'Enter Access Key',
@@ -457,8 +461,12 @@ export const translations = {
       backHome: 'חזרה לדף הבית',
       retry: 'נסה שוב',
       panelTitle: 'לוח ניהול',
-      panelSubtitle: 'ניהול שערים, אבטחה ורשימת IP',
+      panelSubtitle: 'צ׳אט והגדרות',
       backToHome: 'חזרה לדף הבית',
+      tabs: {
+        chat: 'צ׳אט',
+        settings: 'הגדרות',
+      },
       login: {
         verifying: 'מאמת...',
         placeholder: 'הזן מפתח גישה',
@@ -725,8 +733,12 @@ export const translations = {
       backHome: 'العودة للرئيسية',
       retry: 'إعادة المحاولة',
       panelTitle: 'لوحة الإدارة',
-      panelSubtitle: 'إدارة الأسعار والأمان وقائمة IP',
+      panelSubtitle: 'الدردشة والإعدادات',
       backToHome: 'العودة للرئيسية',
+      tabs: {
+        chat: 'الدردشة',
+        settings: 'الإعدادات',
+      },
       login: {
         verifying: 'جاري التحقق...',
         placeholder: 'أدخل مفتاح الوصول',

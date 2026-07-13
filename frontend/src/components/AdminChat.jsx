@@ -36,7 +36,7 @@ const PresenceDot = ({ online, label }) => (
   </span>
 );
 
-const AdminChat = () => {
+const AdminChat = ({ onUnreadChange } = {}) => {
   const { t, locale } = useLanguage();
   const ac = t.admin.chat;
   const [sessions, setSessions] = useState([]);
@@ -437,23 +437,29 @@ const AdminChat = () => {
 
   const totalUnread = sessions.reduce((sum, s) => sum + (s.unread_admin || 0), 0);
 
+  useEffect(() => {
+    if (typeof onUnreadChange === 'function') {
+      onUnreadChange(totalUnread);
+    }
+  }, [totalUnread, onUnreadChange]);
+
   return (
-    <Card className="glass-card border-green-500/20 hover:border-green-500/40 transition-all duration-300 shadow-xl shadow-green-500/10 md:col-span-2">
-      <div className="flex items-center justify-between p-6 border-b border-white/10">
-        <h2 className="text-xl md:text-2xl font-bold text-white flex items-center">
-          <MessageSquare className="w-6 h-6 me-3 text-green-400" />
-          {ac.title}
+    <Card className="h-full min-h-0 flex flex-col overflow-hidden glass-card border-green-500/20 shadow-xl shadow-green-500/10 rounded-none sm:rounded-xl border-0 sm:border">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
+        <h2 className="text-lg font-bold text-white flex items-center min-w-0">
+          <MessageSquare className="w-5 h-5 me-2 text-green-400 shrink-0" />
+          <span className="truncate">{ac.title}</span>
           {totalUnread > 0 && (
-            <Badge className="ms-3 bg-red-500/80 text-white border-none">{totalUnread} {ac.newBadge}</Badge>
+            <Badge className="ms-2 bg-red-500/80 text-white border-none shrink-0">{totalUnread} {ac.newBadge}</Badge>
           )}
         </h2>
-        <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={loading} className="text-gray-400 hover:text-white">
+        <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={loading} className="text-gray-400 hover:text-white shrink-0">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
         </Button>
       </div>
 
-      <div className="flex flex-col md:flex-row h-[500px]">
-        <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 overflow-y-auto max-h-[200px] md:max-h-none">
+      <div className="flex flex-col md:flex-row flex-1 min-h-0">
+        <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 overflow-y-auto max-h-[38%] md:max-h-none shrink-0 md:shrink md:min-h-0">
           <div className="p-3 border-b border-white/10 bg-black/20">
             <p className="text-white/80 text-xs mb-2">{ac.blockSection}</p>
             <div className="flex gap-2 items-center">
@@ -560,10 +566,10 @@ const AdminChat = () => {
           )}
         </div>
 
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-h-0">
           {selectedSession ? (
             <>
-              <div className="px-4 py-3 border-b border-white/10 bg-black/20">
+              <div className="px-4 py-3 border-b border-white/10 bg-black/20 shrink-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-white font-medium text-sm">{selectedSession.visitor_name}</p>
                   <PresenceDot {...sessionPresence(selectedSession)} />
@@ -574,7 +580,7 @@ const AdminChat = () => {
                 <p className="text-gray-500 text-xs">{selectedSession.visitor_ip}</p>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-3" ref={messagesContainerRef}>
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3" ref={messagesContainerRef}>
                 {messages.map((msg) => (
                   <ChatMessageBubble
                     key={msg.message_id || msg.client_message_id}
@@ -585,7 +591,7 @@ const AdminChat = () => {
                 ))}
               </div>
 
-              <div className="p-3 border-t border-white/10 flex gap-2 items-center">
+              <div className="p-3 border-t border-white/10 flex gap-2 items-center shrink-0">
                 <input
                   ref={fileInputRef}
                   type="file"
