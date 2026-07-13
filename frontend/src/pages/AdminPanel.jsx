@@ -120,7 +120,10 @@ const AdminPanel = () => {
       });
       setConfig((prev) => ({ ...prev, adminPassword: '', passwordSet: true }));
 
-      if (window.location.pathname !== config.adminPath) {
+      if (
+        window.location.pathname.replace(/\/+$/, "").toLowerCase() !==
+        String(config.adminPath || "").replace(/\/+$/, "").toLowerCase()
+      ) {
          toast.info(att.urlChanged);
          setTimeout(() => {
              window.location.href = config.adminPath;

@@ -112,9 +112,19 @@ CLEANUP_INTERVAL_SECONDS = 10 * 60
 _last_cleanup_run_at = 0.0
 _cleanup_lock = asyncio.Lock()
 
+def normalize_admin_path(path: str) -> str:
+    """Normalize admin URL path: leading slash, no trailing slash, case-insensitive."""
+    p = "/" + (path or "").strip().strip("/")
+    if p != "/":
+        p = p.lower()
+    return p
+
+
 def resolve_admin_path(config: dict) -> str:
     env_path = os.environ.get("ADMIN_PATH", "").strip()
-    return config.get("adminPath") or env_path or DEFAULT_ADMIN_PATH
+    return normalize_admin_path(
+        config.get("adminPath") or env_path or DEFAULT_ADMIN_PATH
+    )
 
 def _signing_secret() -> bytes:
     secret = JWT_SECRET or os.environ.get("MONGO_URL") or "dev-insecure"
@@ -842,9 +852,10 @@ async def check_admin_path(data: PathCheckRequest):
     await asyncio.sleep(0.5)
     config = await get_config_doc()
     real_path = resolve_admin_path(config)
-    normalized_req = "/" + data.path.strip("/")
-    normalized_real = "/" + real_path.strip("/")
-    return {"is_admin": normalized_req == normalized_real}
+    # Case-insensitive: mobile keyboards often capitalize the first letter.
+    return {
+        "is_admin": normalize_admin_path(data.path) == normalize_admin_path(real_path)
+    }
 
 @app.post("/api/admin/login")
 async def admin_login(data: LoginRequest, request: Request):
@@ -911,9 +922,7 @@ async def get_admin_config(token_data: dict = Depends(verify_token)):
 @app.post("/api/admin/config")
 async def update_admin_config(config: AdminConfigUpdate, token_data: dict = Depends(verify_token)):
     config_data = config.model_dump() if hasattr(config, 'model_dump') else config.dict()
-    new_path = config_data["adminPath"]
-    if not new_path.startswith("/"):
-        new_path = "/" + new_path
+    new_path = normalize_admin_path(config_data["adminPath"])
 
     forbidden_prefixes = ["/api", "/static", "/frontend"]
     for fp in forbidden_prefixes:
