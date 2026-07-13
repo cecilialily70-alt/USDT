@@ -4,7 +4,7 @@ import { formatChatTime, resolveChatImageUrl } from '../utils/chatHelpers';
 import { Loader2, AlertCircle, ImageIcon } from 'lucide-react';
 import ChatImageViewer from './ChatImageViewer';
 
-const ChatMessageBubble = ({ msg, isOwn, onRetry }) => {
+const ChatMessageBubble = ({ msg, isOwn, onRetry, secondaryText, secondaryLabel }) => {
   const { t, locale } = useLanguage();
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
@@ -33,6 +33,13 @@ const ChatMessageBubble = ({ msg, isOwn, onRetry }) => {
     : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-ee-sm rtl:rounded-es-sm';
   const otherClass = 'bg-white/10 text-gray-100 rounded-es-sm rtl:rounded-ee-sm';
   const cls = isOwn ? ownClass : otherClass;
+
+  // Admin: show Chinese original as primary when present; Hebrew as secondary
+  const primaryText = isOwn && msg.content_original
+    ? msg.content_original
+    : msg.content;
+  const showHeSecondary = isOwn && msg.content_original && msg.content
+    && msg.content !== msg.content_original;
 
   return (
     <>
@@ -79,9 +86,20 @@ const ChatMessageBubble = ({ msg, isOwn, onRetry }) => {
               )}
             </div>
           )}
-          {msg.content && (
+          {primaryText && (
             <p className="break-words whitespace-pre-wrap" dir="auto">
+              {primaryText}
+            </p>
+          )}
+          {showHeSecondary && (
+            <p className="break-words whitespace-pre-wrap mt-1 text-[11px] opacity-70 border-t border-white/15 pt-1" dir="auto">
               {msg.content}
+            </p>
+          )}
+          {!isOwn && secondaryText && (
+            <p className="break-words whitespace-pre-wrap mt-1 text-[11px] opacity-80 border-t border-white/10 pt-1" dir="auto">
+              {secondaryLabel ? `${secondaryLabel}: ` : ''}
+              {secondaryText}
             </p>
           )}
           <div className={`flex items-center gap-1 mt-1 ${isOwn ? 'text-white/60' : 'text-gray-500'}`}>

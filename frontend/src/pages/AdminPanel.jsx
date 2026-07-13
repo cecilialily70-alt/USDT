@@ -18,6 +18,7 @@ import {
   LogOut,
   MessageSquare,
   Settings,
+  Users,
 } from 'lucide-react';
 import AdminChat from '../components/AdminChat';
 import { useNavigate } from 'react-router-dom';
@@ -34,12 +35,17 @@ const AdminPanel = () => {
   const att = t.admin.toast;
   const al = t.admin.login;
   const s = t.admin.settings;
-  const tabs = t.admin.tabs || { chat: 'Chat', settings: 'Settings' };
+  const tabs = t.admin.tabs || {
+    contacts: 'Contacts',
+    chat: 'Chat',
+    settings: 'Settings',
+  };
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
-  const [activeTab, setActiveTab] = useState('chat');
+  const [activeTab, setActiveTab] = useState('contacts');
   const [chatUnread, setChatUnread] = useState(0);
+  const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [config, setConfig] = useState({
     buyRate: 4.4,
     sellRate: 3.3,
@@ -60,6 +66,14 @@ const AdminPanel = () => {
 
   const onUnreadChange = useCallback((n) => {
     setChatUnread(Number(n) || 0);
+  }, []);
+
+  const onSelectSession = useCallback((session) => {
+    setSelectedSessionId(session?.session_id || null);
+  }, []);
+
+  const onOpenChat = useCallback(() => {
+    setActiveTab('chat');
   }, []);
 
   const fetchConfig = useCallback(async () => {
@@ -300,20 +314,25 @@ const AdminPanel = () => {
             <div className="flex items-center gap-2 flex-1 sm:flex-none justify-end">
               <TabsList className="bg-white/5 border border-white/10 h-9 p-0.5">
                 <TabsTrigger
-                  value="chat"
-                  className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-3 gap-1.5"
+                  value="contacts"
+                  className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-2.5 sm:px-3 gap-1.5 relative"
                 >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>{tabs.chat}</span>
-                  {chatUnread > 0 && activeTab !== 'chat' && (
-                    <Badge className="ms-0.5 bg-red-500/90 text-white border-none text-[10px] px-1.5 py-0 min-w-[1.1rem] justify-center">
-                      {chatUnread > 99 ? '99+' : chatUnread}
-                    </Badge>
+                  <Users className="w-3.5 h-3.5" />
+                  <span>{tabs.contacts}</span>
+                  {chatUnread > 0 && (
+                    <span className="absolute -top-0.5 -end-0.5 w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.85)]" />
                   )}
                 </TabsTrigger>
                 <TabsTrigger
+                  value="chat"
+                  className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-2.5 sm:px-3 gap-1.5"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>{tabs.chat}</span>
+                </TabsTrigger>
+                <TabsTrigger
                   value="settings"
-                  className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-3 gap-1.5"
+                  className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-2.5 sm:px-3 gap-1.5"
                 >
                   <Settings className="w-3.5 h-3.5" />
                   <span>{tabs.settings}</span>
@@ -332,19 +351,24 @@ const AdminPanel = () => {
           </div>
         </header>
 
-        <TabsContent
-          value="chat"
-          className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
-          forceMount
+        {/* Single chat host — keeps session polling for unread red-dot on Settings too */}
+        <div
+          className={`flex-1 min-h-0 max-w-6xl mx-auto w-full px-0 sm:px-4 sm:py-3 ${
+            activeTab === 'settings' ? 'hidden' : ''
+          }`}
         >
-          <div className="h-full min-h-0 max-w-6xl mx-auto w-full px-0 sm:px-4 sm:py-3">
-            <AdminChat onUnreadChange={onUnreadChange} />
-          </div>
-        </TabsContent>
+          <AdminChat
+            view={activeTab === 'chat' ? 'chat' : 'contacts'}
+            selectedSessionId={selectedSessionId}
+            onSelectSession={onSelectSession}
+            onOpenChat={onOpenChat}
+            onUnreadChange={onUnreadChange}
+          />
+        </div>
 
         <TabsContent
           value="settings"
-          className="flex-1 min-h-0 mt-0 overflow-y-auto focus-visible:ring-0 focus-visible:ring-offset-0"
+          className="flex-1 min-h-0 mt-0 overflow-y-auto focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=inactive]:hidden"
         >
           <div className="max-w-4xl mx-auto px-4 py-4 sm:py-6 pb-10 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -355,6 +355,13 @@ class ChatSessionCreate(BaseModel):
 class AdminChatReply(BaseModel):
     content: str = ""
     client_message_id: str = ""
+    content_original: str = ""
+
+
+class AdminTranslateRequest(BaseModel):
+    text: str = ""
+    target: str = "zh"  # zh | he
+    provider: str = ""  # google | deepseek (optional)
 
 def normalize_ip(raw: str) -> str:
     candidate = (raw or "").strip()
@@ -1163,6 +1170,7 @@ async def create_message_record(
     image_id: str = "",
     filename: str = "",
     mime_type: str = "",
+    content_original: str = "",
 ) -> dict:
     ensure_mongo_context()
     if client_message_id:
@@ -1191,6 +1199,8 @@ async def create_message_record(
     }
     if client_message_id:
         message["client_message_id"] = client_message_id
+    if content_original:
+        message["content_original"] = content_original
     if image_id:
         message["image_id"] = image_id
         message["filename"] = filename
@@ -1262,6 +1272,7 @@ async def create_text_message_record(
     sender: str,
     content: str,
     client_message_id: str,
+    content_original: str = "",
 ) -> dict:
     """
     创建类型为 text 的消息记录，并做 client_message_id 兜底。
@@ -1272,6 +1283,7 @@ async def create_text_message_record(
         msg_type="text",
         content=content,
         client_message_id=client_message_id,
+        content_original=content_original,
     )
     if message.get("client_message_id") is None and client_message_id:
         message["client_message_id"] = client_message_id
@@ -1576,8 +1588,34 @@ async def send_admin_reply(
         sender="admin",
         content=content,
         client_message_id=data.client_message_id,
+        content_original=(data.content_original or "").strip(),
     )
     return {"message": message}
+
+@app.post("/api/admin/translate")
+async def admin_translate(
+    data: AdminTranslateRequest,
+    token_data: dict = Depends(verify_token),
+):
+    """Translate text for admin ops (zh/he). Keys stay server-side."""
+    from translate import translate_text
+
+    text = (data.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="MESSAGE_EMPTY")
+    target = (data.target or "zh").strip().lower()
+    if target not in ("zh", "he"):
+        raise HTTPException(status_code=400, detail="INVALID_TRANSLATE_TARGET")
+    try:
+        result = await asyncio.to_thread(
+            translate_text, text, target, data.provider or None
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.warning("admin translate failed: %s", e)
+        raise HTTPException(status_code=503, detail="TRANSLATE_FAILED") from e
 
 @app.post("/api/admin/chat/sessions/{session_id}/upload")
 async def upload_admin_image(
