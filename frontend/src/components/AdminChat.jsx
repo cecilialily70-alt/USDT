@@ -80,6 +80,8 @@ const AdminChat = ({
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [zhCache, setZhCache] = useState({});
+  const zhCacheRef = useRef(zhCache);
+  zhCacheRef.current = zhCache;
   const messagesContainerRef = useRef(null);
   const forceScrollToBottomRef = useRef(false);
   const lastSinceRef = useRef(null);
@@ -249,7 +251,7 @@ const AdminChat = ({
       if (msg.type === 'image') return;
       const mid = msg.message_id || msg.client_message_id;
       if (!mid) return;
-      if (zhCache[mid] !== undefined) return;
+      if (zhCacheRef.current[mid] !== undefined) return;
 
       const original = (msg.content_original || '').trim();
       if (original) {
