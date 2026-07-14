@@ -6,7 +6,7 @@ import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import {
-  ArrowLeft,
+  ArrowLeftRight,
   Save,
   RefreshCw,
   Link as LinkIcon,
@@ -305,12 +305,22 @@ const AdminPanel = () => {
           <div className="max-w-6xl mx-auto flex flex-wrap items-center gap-2 sm:gap-3 justify-between">
             <div className="flex items-center gap-2 min-w-0">
               <Button
-                onClick={() => navigate('/')}
+                onClick={() =>
+                  setActiveTab((prev) => (prev === 'chat' ? 'contacts' : 'chat'))
+                }
                 variant="ghost"
                 size="sm"
-                className="text-gray-400 hover:text-white hover:bg-white/10 shrink-0 -ms-1"
+                title={
+                  activeTab === 'chat'
+                    ? `切换到${tabs.contacts}`
+                    : `切换到${tabs.chat}`
+                }
+                className="text-gray-300 hover:text-white hover:bg-white/10 shrink-0 -ms-1 gap-1"
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeftRight className="w-4 h-4" />
+                <span className="text-xs hidden sm:inline">
+                  {activeTab === 'chat' ? tabs.contacts : tabs.chat}
+                </span>
               </Button>
               <div className="min-w-0">
                 <h1 className="text-base sm:text-lg font-bold text-white truncate leading-tight">

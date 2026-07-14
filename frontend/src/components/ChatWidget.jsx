@@ -20,6 +20,7 @@ import {
 import {
   MAX_IMAGE_SIZE_BYTES,
   isSupportedImageFile,
+  extractClipboardImageFile,
 } from '../utils/chatConstants';
 import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications';
 
@@ -515,10 +516,8 @@ const ChatWidget = () => {
     }
   };
 
-  const handleImageSelect = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || uploading) return;
-    e.target.value = '';
+  const uploadImageFile = async (file) => {
+    if (!file || uploading || chatBlocked || needsRegister) return;
 
     if (!isSupportedImageFile(file)) {
       setPhoneError(t.chat.imageUnsupported);
@@ -529,6 +528,7 @@ const ChatWidget = () => {
       return;
     }
 
+    setPhoneError('');
     setUploading(true);
     const clientId = createClientMessageId();
     const previewUrl = URL.createObjectURL(file);
@@ -580,6 +580,20 @@ const ChatWidget = () => {
       setUploading(false);
       inputRef.current?.focus();
     }
+  };
+
+  const handleImageSelect = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) await uploadImageFile(file);
+  };
+
+  const handlePasteImage = (e) => {
+    if (chatBlocked || needsRegister || uploading) return;
+    const file = extractClipboardImageFile(e.clipboardData);
+    if (!file) return;
+    e.preventDefault();
+    uploadImageFile(file);
   };
 
   const handleKeyDown = (e) => {
@@ -678,7 +692,10 @@ const ChatWidget = () => {
               {phoneError && (
                 <p className="px-4 pb-1 text-center text-xs text-red-400">{phoneError}</p>
               )}
-              <div className={`flex items-center gap-2 border-t border-white/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${chatBlocked ? 'pointer-events-none opacity-50' : ''}`}>
+              <div
+                className={`flex items-center gap-2 border-t border-white/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${chatBlocked ? 'pointer-events-none opacity-50' : ''}`}
+                onPaste={handlePasteImage}
+              >
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -704,6 +721,7 @@ const ChatWidget = () => {
                     if (phoneError) setPhoneError('');
                   }}
                   onKeyDown={handleKeyDown}
+                  onPaste={handlePasteImage}
                   placeholder={t.chat.inputPlaceholder}
                   disabled={sending}
                   dir="auto"

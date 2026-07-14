@@ -27,6 +27,7 @@ import {
 import {
   MAX_IMAGE_SIZE_BYTES,
   isSupportedImageFile,
+  extractClipboardImageFile,
 } from '../utils/chatConstants';
 import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications';
 import { adminZh } from '../i18n/adminZh';
@@ -349,6 +350,25 @@ const AdminChat = ({
     setTimeout(() => setTranslateStatus(''), 1600);
   };
 
+  const handleComposerEnter = () => {
+    const hasSend = !!sendHe.trim();
+    const hasDraft = !!draftZh.trim();
+    if (hasSend && hasDraft) {
+      // 两框都有字：清空发送框，翻译下方中文
+      setSendHe('');
+      setPendingOriginal('');
+      handleTranslateDraft();
+      return;
+    }
+    if (hasSend) {
+      handleSendReply();
+      return;
+    }
+    if (hasDraft) {
+      handleTranslateDraft();
+    }
+  };
+
   const handleTranslateDraft = async () => {
     const text = draftZh.trim();
     if (!text || translating) return;
@@ -466,10 +486,8 @@ const AdminChat = ({
     }
   };
 
-  const handleImageSelect = async (e) => {
-    const file = e.target.files?.[0];
+  const uploadImageFile = async (file) => {
     if (!file || !selectedSessionId || uploading) return;
-    e.target.value = '';
 
     if (!isSupportedImageFile(file)) {
       toast.error(t.chat.imageUnsupported);
@@ -499,7 +517,7 @@ const AdminChat = ({
 
     try {
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', file, file.name);
       form.append('client_message_id', clientId);
       const res = await retryRequest(() =>
         axios.post(`${API}/admin/chat/sessions/${selectedSessionId}/upload`, form, {
@@ -525,6 +543,20 @@ const AdminChat = ({
       URL.revokeObjectURL(localUrl);
       setUploading(false);
     }
+  };
+
+  const handleImageSelect = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) await uploadImageFile(file);
+  };
+
+  const handlePasteImage = (e) => {
+    if (!selectedSessionId || uploading) return;
+    const file = extractClipboardImageFile(e.clipboardData);
+    if (!file) return;
+    e.preventDefault();
+    uploadImageFile(file);
   };
 
   const sessionPresence = (session) => {
@@ -766,7 +798,7 @@ const AdminChat = ({
         })}
       </div>
 
-      <div className="p-3 border-t border-white/10 space-y-2 shrink-0">
+      <div className="p-3 border-t border-white/10 space-y-2 shrink-0" onPaste={handlePasteImage}>
         {/* 发送框在上 */}
         <div className="flex gap-2 items-center">
           <input
@@ -790,9 +822,13 @@ const AdminChat = ({
             ref={sendRef}
             value={sendHe}
             onChange={(e) => setSendHe(e.target.value)}
-            onKeyDown={(e) =>
-              e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendReply())
-            }
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleComposerEnter();
+              }
+            }}
+            onPaste={handlePasteImage}
             placeholder={ac.sendPlaceholder}
             disabled={sending}
             dir="auto"
@@ -813,6 +849,13 @@ const AdminChat = ({
             ref={draftRef}
             value={draftZh}
             onChange={(e) => setDraftZh(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleComposerEnter();
+              }
+            }}
+            onPaste={handlePasteImage}
             placeholder={ac.draftPlaceholder}
             disabled={sending || translating}
             className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"

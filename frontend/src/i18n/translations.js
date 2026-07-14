@@ -143,6 +143,9 @@ export const translations = {
       imageLoadFailed: 'Image failed to load',
       imageRetry: 'Tap to retry',
       sendFailedRetry: 'Failed to send. Tap to retry.',
+      imagePreviewTitle: 'Preview before sending',
+      imagePreviewConfirm: 'Send',
+      imagePreviewCancel: 'Cancel',
       newMessageTitle: 'New reply from support',
       newMessageBody: 'You have a new message in live chat.',
       imageViewer: {
@@ -429,6 +432,9 @@ export const translations = {
       imageLoadFailed: 'לא ניתן לטעון את התמונה',
       imageRetry: 'לחץ לניסיון חוזר',
       sendFailedRetry: 'השליחה נכשלה. לחץ לניסיון חוזר.',
+      imagePreviewTitle: 'תצוגה מקדימה לפני שליחה',
+      imagePreviewConfirm: 'שלח',
+      imagePreviewCancel: 'ביטול',
       newMessageTitle: 'תשובה חדשה מהתמיכה',
       newMessageBody: 'יש לך הודעה חדשה בצ\'אט.',
       imageViewer: {
@@ -715,6 +721,9 @@ export const translations = {
       imageLoadFailed: 'تعذر تحميل الصورة',
       imageRetry: 'اضغط لإعادة المحاولة',
       sendFailedRetry: 'فشل الإرسال. اضغط لإعادة المحاولة.',
+      imagePreviewTitle: 'معاينة قبل الإرسال',
+      imagePreviewConfirm: 'إرسال',
+      imagePreviewCancel: 'إلغاء',
       newMessageTitle: 'رد جديد من الدعم',
       newMessageBody: 'لديك رسالة جديدة في الدردشة.',
       imageViewer: {

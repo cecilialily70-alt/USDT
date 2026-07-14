@@ -669,6 +669,58 @@ async def delete_session_completely(session_id: str) -> bool:
     result = await chat_sessions_collection.delete_one({"session_id": session_id})
     return result.deleted_count > 0
 
+def _message_preview_text(msg: dict) -> str:
+    if not msg:
+        return ""
+    if msg.get("type") == "image":
+        return f"[Image] {msg.get('filename') or 'image'}"
+    return (msg.get("content") or msg.get("content_original") or "")[:100]
+
+async def recompute_session_last_message(session_id: str) -> None:
+    """Refresh session last_message / last_message_at from newest remaining message."""
+    if not session_id:
+        return
+    ensure_mongo_context()
+    last = await chat_messages_collection.find_one(
+        {"session_id": session_id},
+        {"_id": 0, "type": 1, "content": 1, "content_original": 1, "filename": 1, "created_at": 1},
+        sort=[("created_at", -1)],
+    )
+    if last:
+        patch = {
+            "last_message": _message_preview_text(last),
+            "last_message_at": last.get("created_at") or utc_now_iso(),
+        }
+    else:
+        patch = {"last_message": ""}
+    await chat_sessions_collection.update_one({"session_id": session_id}, {"$set": patch})
+
+async def delete_message_completely(session_id: str, message_id: str) -> bool:
+    """Delete one chat message and its GridFS image if present."""
+    if not session_id or not message_id:
+        return False
+    ensure_mongo_context()
+    msg = await chat_messages_collection.find_one(
+        {"session_id": session_id, "message_id": message_id},
+        {"_id": 0, "type": 1, "image_id": 1},
+    )
+    if not msg:
+        return False
+    if msg.get("type") == "image":
+        image_id = msg.get("image_id")
+        if image_id:
+            try:
+                await delete_image_by_name(image_id)
+            except Exception as e:
+                logger.warning("delete message image %s failed: %s", image_id, e)
+    result = await chat_messages_collection.delete_one(
+        {"session_id": session_id, "message_id": message_id}
+    )
+    if result.deleted_count > 0:
+        await recompute_session_last_message(session_id)
+        return True
+    return False
+
 async def cleanup_expired_chat_data():
     ensure_mongo_context()
     cutoff_dt = datetime.utcnow() - timedelta(hours=CHAT_RETENTION_HOURS)
@@ -773,6 +825,18 @@ async def read_and_validate_image(file: UploadFile) -> tuple[bytes, str]:
     if len(file_bytes) == 0:
         raise HTTPException(status_code=400, detail="EMPTY_FILE")
     mime_type = resolve_image_mime(file.filename or "", file.content_type or "")
+    if mime_type not in ALLOWED_IMAGE_TYPES:
+        # Clipboard pastes often omit filename; sniff magic bytes as fallback.
+        if file_bytes[:3] == b"\xff\xd8\xff":
+            mime_type = "image/jpeg"
+        elif file_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+            mime_type = "image/png"
+        elif file_bytes[:6] in (b"GIF87a", b"GIF89a"):
+            mime_type = "image/gif"
+        elif len(file_bytes) >= 12 and file_bytes[:4] == b"RIFF" and file_bytes[8:12] == b"WEBP":
+            mime_type = "image/webp"
+        elif file_bytes[:2] == b"BM":
+            mime_type = "image/bmp"
     if mime_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail=IMAGE_TYPE_ERROR_DETAIL)
     if len(file_bytes) > MAX_IMAGE_SIZE:
