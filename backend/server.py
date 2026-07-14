@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import ipaddress
 import logging
 import certifi
@@ -14,6 +15,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
+
+# Ensure sibling modules (e.g. translate.py) resolve on Vercel / local.
+_BACKEND_DIR = Path(__file__).resolve().parent
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
+
 from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -1598,7 +1605,11 @@ async def admin_translate(
     token_data: dict = Depends(verify_token),
 ):
     """Translate text for admin ops (zh/he). Keys stay server-side."""
-    from translate import translate_text
+    try:
+        from translate import translate_text
+    except ImportError as e:
+        logger.exception("translate module import failed: %s", e)
+        raise HTTPException(status_code=503, detail="TRANSLATE_MODULE_MISSING") from e
 
     text = (data.text or "").strip()
     if not text:

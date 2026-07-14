@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -26,20 +25,18 @@ import { toast } from 'sonner';
 import axios from 'axios';
 import { getApiErrorMessage } from '../utils/chatHelpers';
 import { resolveApiSuccess } from '../utils/apiErrors';
+import { adminZh } from '../i18n/adminZh';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const API = '/api';
 
 const AdminPanel = () => {
-  const { t } = useLanguage();
-  const at = t.admin;
-  const att = t.admin.toast;
-  const al = t.admin.login;
-  const s = t.admin.settings;
-  const tabs = t.admin.tabs || {
-    contacts: 'Contacts',
-    chat: 'Chat',
-    settings: 'Settings',
-  };
+  const { t } = useLanguage(); // for API error code mapping
+  const at = adminZh;
+  const att = adminZh.toast;
+  const al = adminZh.login;
+  const s = adminZh.settings;
+  const tabs = adminZh.tabs;
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
@@ -58,6 +55,18 @@ const AdminPanel = () => {
   const [password, setPassword] = useState('');
   const [whitelist, setWhitelist] = useState([]);
   const [newIp, setNewIp] = useState('');
+
+  useEffect(() => {
+    // 管理后台固定 LTR + 中文阅读方向
+    const prevDir = document.documentElement.getAttribute('dir');
+    const prevLang = document.documentElement.getAttribute('lang');
+    document.documentElement.setAttribute('dir', 'ltr');
+    document.documentElement.setAttribute('lang', 'zh-CN');
+    return () => {
+      if (prevDir) document.documentElement.setAttribute('dir', prevDir);
+      if (prevLang) document.documentElement.setAttribute('lang', prevLang);
+    };
+  }, []);
 
   const clearSession = useCallback(() => {
     localStorage.removeItem('admin_token');
@@ -286,7 +295,7 @@ const AdminPanel = () => {
   }
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-br from-[#06080F] via-[#0a0e1a] to-[#0F1419]">
+    <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-br from-[#06080F] via-[#0a0e1a] to-[#0F1419]" dir="ltr" lang="zh-CN">
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}

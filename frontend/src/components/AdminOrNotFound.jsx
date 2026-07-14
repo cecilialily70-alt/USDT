@@ -4,6 +4,7 @@ import { Toaster } from 'sonner';
 import axios from 'axios';
 import { useLanguage } from '../contexts/LanguageContext';
 import { resolveApiError } from '../utils/apiErrors';
+import { adminZh } from '../i18n/adminZh';
 import AdminPanel from '../pages/AdminPanel';
 
 export default function AdminOrNotFound() {
@@ -27,11 +28,11 @@ export default function AdminOrNotFound() {
       } catch (e) {
         const detail = e.response?.data?.detail;
         if (typeof detail === 'string') {
-          setErrorMsg(resolveApiError(detail, t, t.errors.verifyFailed));
+          setErrorMsg(resolveApiError(detail, t, adminZh.errors.verifyFailed));
         } else if (!e.response) {
-          setErrorMsg(t.errors.serverUnreachable);
+          setErrorMsg(adminZh.errors.serverUnreachable);
         } else {
-          setErrorMsg(t.errors.verifyFailed);
+          setErrorMsg(adminZh.errors.verifyFailed);
         }
         setStatus('error');
       }
@@ -41,8 +42,8 @@ export default function AdminOrNotFound() {
 
   if (status === 'checking') {
     return (
-      <div className="min-h-screen bg-[#06080F] flex items-center justify-center text-white">
-        {t.admin.loading}
+      <div className="min-h-screen bg-[#06080F] flex items-center justify-center text-white" dir="ltr">
+        {adminZh.loading}
       </div>
     );
   }
@@ -58,19 +59,22 @@ export default function AdminOrNotFound() {
 
   if (status === 'error') {
     return (
-      <div className="min-h-screen bg-[#06080F] flex flex-col items-center justify-center text-white px-4 gap-4">
+      <div
+        className="min-h-screen bg-[#06080F] flex flex-col items-center justify-center text-white px-4 gap-4"
+        dir="ltr"
+      >
         <p className="text-red-400 text-center">{errorMsg}</p>
         <button
           onClick={() => window.location.reload()}
           className="px-6 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
         >
-          {t.admin.retry}
+          {adminZh.retry}
         </button>
         <button
           onClick={() => navigate('/')}
           className="text-gray-500 hover:text-gray-300 text-sm"
         >
-          {t.admin.backHome}
+          {adminZh.backHome}
         </button>
       </div>
     );

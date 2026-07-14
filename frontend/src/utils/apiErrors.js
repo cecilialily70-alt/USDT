@@ -25,6 +25,8 @@ const ERROR_TO_ERRORS_KEY = {
   IMAGE_ACCESS_DENIED: 'imageAccessDenied',
   JWT_SECRET_NOT_CONFIGURED: 'jwtSecretNotConfigured',
   REQUEST_FAILED: 'requestFailed',
+  TRANSLATE_FAILED: 'requestFailed',
+  TRANSLATE_MODULE_MISSING: 'requestFailed',
 };
 
 const SUCCESS_TO_TOAST_KEY = {

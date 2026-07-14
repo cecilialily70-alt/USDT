@@ -4,7 +4,18 @@ import { formatChatTime, resolveChatImageUrl } from '../utils/chatHelpers';
 import { Loader2, AlertCircle, ImageIcon } from 'lucide-react';
 import ChatImageViewer from './ChatImageViewer';
 
-const ChatMessageBubble = ({ msg, isOwn, onRetry, secondaryText, secondaryLabel }) => {
+/**
+ * Admin: pass showAdminLayout + foreignText (top) + chineseText (bottom).
+ * Visitor widget: only msg/isOwn/onRetry — shows content as before.
+ */
+const ChatMessageBubble = ({
+  msg,
+  isOwn,
+  onRetry,
+  foreignText,
+  chineseText,
+  showAdminLayout = false,
+}) => {
   const { t, locale } = useLanguage();
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
@@ -28,18 +39,16 @@ const ChatMessageBubble = ({ msg, isOwn, onRetry, secondaryText, secondaryLabel 
     setImgError(true);
   };
 
-  const ownClass = msg.sender === 'admin'
-    ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-ee-sm rtl:rounded-es-sm'
-    : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-ee-sm rtl:rounded-es-sm';
+  const ownClass =
+    msg.sender === 'admin'
+      ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-ee-sm rtl:rounded-es-sm'
+      : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-ee-sm rtl:rounded-es-sm';
   const otherClass = 'bg-white/10 text-gray-100 rounded-es-sm rtl:rounded-ee-sm';
   const cls = isOwn ? ownClass : otherClass;
 
-  // Admin: show Chinese original as primary when present; Hebrew as secondary
-  const primaryText = isOwn && msg.content_original
-    ? msg.content_original
-    : msg.content;
-  const showHeSecondary = isOwn && msg.content_original && msg.content
-    && msg.content !== msg.content_original;
+  const topText = showAdminLayout ? foreignText ?? msg.content : msg.content;
+  const bottomText = showAdminLayout ? chineseText : null;
+  const timeLocale = showAdminLayout ? 'zh-CN' : locale;
 
   return (
     <>
@@ -86,25 +95,27 @@ const ChatMessageBubble = ({ msg, isOwn, onRetry, secondaryText, secondaryLabel 
               )}
             </div>
           )}
-          {primaryText && (
+
+          {topText ? (
             <p className="break-words whitespace-pre-wrap" dir="auto">
-              {primaryText}
+              {topText}
             </p>
-          )}
-          {showHeSecondary && (
-            <p className="break-words whitespace-pre-wrap mt-1 text-[11px] opacity-70 border-t border-white/15 pt-1" dir="auto">
-              {msg.content}
+          ) : null}
+
+          {bottomText ? (
+            <p
+              className="break-words whitespace-pre-wrap mt-1.5 text-[12px] opacity-90 border-t border-white/20 pt-1.5"
+              dir="auto"
+            >
+              {bottomText}
             </p>
-          )}
-          {!isOwn && secondaryText && (
-            <p className="break-words whitespace-pre-wrap mt-1 text-[11px] opacity-80 border-t border-white/10 pt-1" dir="auto">
-              {secondaryLabel ? `${secondaryLabel}: ` : ''}
-              {secondaryText}
-            </p>
-          )}
-          <div className={`flex items-center gap-1 mt-1 ${isOwn ? 'text-white/60' : 'text-gray-500'}`}>
+          ) : null}
+
+          <div
+            className={`flex items-center gap-1 mt-1 ${isOwn ? 'text-white/60' : 'text-gray-500'}`}
+          >
             <p className="text-[10px]" dir="ltr">
-              {formatChatTime(msg.created_at, false, locale)}
+              {formatChatTime(msg.created_at, false, timeLocale)}
             </p>
             {isPending && <Loader2 className="w-3 h-3 animate-spin" />}
             {isFailed && <AlertCircle className="w-3 h-3 text-red-400" />}
@@ -115,7 +126,9 @@ const ChatMessageBubble = ({ msg, isOwn, onRetry, secondaryText, secondaryLabel 
               onClick={onRetry}
               className="mt-1 text-[11px] underline opacity-90 hover:opacity-100"
             >
-              {t.chat.sendFailedRetry || t.chat.imageRetry}
+              {showAdminLayout
+                ? '发送失败，点击重试'
+                : t.chat.sendFailedRetry || t.chat.imageRetry}
             </button>
           )}
         </div>

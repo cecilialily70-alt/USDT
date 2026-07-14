@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
@@ -30,6 +29,8 @@ import {
   isSupportedImageFile,
 } from '../utils/chatConstants';
 import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications';
+import { adminZh } from '../i18n/adminZh';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const API = '/api';
 const SESSION_POLL_INTERVAL = 3000;
@@ -54,10 +55,6 @@ const UnreadDot = ({ show }) =>
     />
   ) : null;
 
-/**
- * Admin chat: contacts list OR chat room.
- * view: 'contacts' | 'chat'
- */
 const AdminChat = ({
   view = 'contacts',
   selectedSessionId = null,
@@ -65,8 +62,8 @@ const AdminChat = ({
   onOpenChat,
   onUnreadChange,
 } = {}) => {
-  const { t, locale } = useLanguage();
-  const ac = t.admin.chat;
+  const { t } = useLanguage(); // for getApiErrorMessage mapping
+  const ac = adminZh.chat;
   const [sessions, setSessions] = useState([]);
   const [blacklist, setBlacklist] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -81,7 +78,7 @@ const AdminChat = ({
   );
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [zhCache, setZhCache] = useState({}); // message_id -> zh text | '' failed
+  const [zhCache, setZhCache] = useState({});
   const messagesContainerRef = useRef(null);
   const forceScrollToBottomRef = useRef(false);
   const lastSinceRef = useRef(null);
@@ -243,27 +240,37 @@ const AdminChat = ({
     }
   }, [messages, zhCache]);
 
-  // Auto-translate visitor messages → zh
+  // Auto-translate foreign messages → Chinese (visitor + admin without original)
   useEffect(() => {
     if (view !== 'chat') return;
     const token = getToken();
     messages.forEach((msg) => {
-      if (msg.sender !== 'visitor' || msg.type === 'image') return;
+      if (msg.type === 'image') return;
       const mid = msg.message_id || msg.client_message_id;
-      if (!mid || !msg.content?.trim()) return;
+      if (!mid) return;
       if (zhCache[mid] !== undefined) return;
+
+      const original = (msg.content_original || '').trim();
+      if (original) {
+        setZhCache((prev) => ({ ...prev, [mid]: original }));
+        return;
+      }
+
+      const text = (msg.content || '').trim();
+      if (!text) return;
       if (translatingIdsRef.current.has(mid)) return;
       translatingIdsRef.current.add(mid);
       axios
         .post(
           `${API}/admin/translate`,
-          { text: msg.content, target: 'zh', provider },
+          { text, target: 'zh', provider },
           { headers: { Authorization: `Bearer ${token}` }, timeout: 60000 }
         )
         .then((res) => {
-          setZhCache((prev) => ({ ...prev, [mid]: res.data?.text || msg.content }));
+          setZhCache((prev) => ({ ...prev, [mid]: res.data?.text || text }));
         })
-        .catch(() => {
+        .catch((err) => {
+          console.warn('translate zh failed', err?.response?.status, err?.message);
           setZhCache((prev) => ({ ...prev, [mid]: '' }));
         })
         .finally(() => {
@@ -361,7 +368,12 @@ const AdminChat = ({
       sendRef.current?.focus();
     } catch (err) {
       setTranslateStatus('');
-      toast.error(getApiErrorMessage(err, ac.translateFailed, t));
+      const detail = err?.response?.data?.detail;
+      toast.error(
+        typeof detail === 'string'
+          ? `${ac.translateFailed}: ${detail}`
+          : getApiErrorMessage(err, ac.translateFailed, t)
+      );
     } finally {
       setTranslating(false);
     }
@@ -630,7 +642,7 @@ const AdminChat = ({
                       </p>
                       <p className="text-gray-600 text-[10px] mt-1">
                         {session.visitor_ip} ·{' '}
-                        {formatChatTime(session.last_message_at, true, locale)}
+                        {formatChatTime(session.last_message_at, true, 'zh-CN')}
                       </p>
                     </div>
                     <div className="flex shrink-0">
@@ -727,19 +739,27 @@ const AdminChat = ({
         {messages.map((msg) => {
           const mid = msg.message_id || msg.client_message_id;
           const isOwn = msg.sender === 'admin';
-          let secondary = null;
-          if (!isOwn && msg.type !== 'image' && mid) {
-            if (zhCache[mid] === '') secondary = ac.translationFailedHint;
-            else if (zhCache[mid]) secondary = zhCache[mid];
-            else secondary = '…';
+          // 外文在上、中文在下
+          const foreign = msg.content || '';
+          let chinese = null;
+          if (msg.type !== 'image' && mid) {
+            if (msg.content_original) chinese = msg.content_original;
+            else if (zhCache[mid] === '') chinese = ac.translationFailedHint;
+            else if (zhCache[mid]) chinese = zhCache[mid];
+            else chinese = ac.translatingHint;
+            // 与外文完全相同时不重复显示
+            if (chinese && foreign && chinese.trim() === foreign.trim()) {
+              chinese = null;
+            }
           }
           return (
             <ChatMessageBubble
               key={mid}
               msg={msg}
               isOwn={isOwn}
-              secondaryText={secondary}
-              secondaryLabel={!isOwn ? ac.zhSubtitle : undefined}
+              showAdminLayout
+              foreignText={foreign}
+              chineseText={chinese}
               onRetry={msg.status === 'failed' ? () => handleRetryMessage(msg) : undefined}
             />
           );
@@ -747,25 +767,7 @@ const AdminChat = ({
       </div>
 
       <div className="p-3 border-t border-white/10 space-y-2 shrink-0">
-        <div className="flex gap-2 items-center">
-          <Input
-            ref={draftRef}
-            value={draftZh}
-            onChange={(e) => setDraftZh(e.target.value)}
-            placeholder={ac.draftPlaceholder}
-            disabled={sending || translating}
-            className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"
-          />
-          <Button
-            type="button"
-            disabled={!draftZh.trim() || translating || sending}
-            onClick={handleTranslateDraft}
-            className="h-10 shrink-0 bg-amber-600 hover:bg-amber-700 gap-1"
-          >
-            <Languages className="w-4 h-4" />
-            {translating ? ac.translating : ac.translateBtn}
-          </Button>
-        </div>
+        {/* 发送框在上 */}
         <div className="flex gap-2 items-center">
           <input
             ref={fileInputRef}
@@ -800,9 +802,29 @@ const AdminChat = ({
             onClick={handleSendReply}
             disabled={!sendHe.trim() || sending}
             size="icon"
-            className="h-10 w-10 bg-green-600 hover:bg-green-700 shrink-0 rtl:scale-x-[-1]"
+            className="h-10 w-10 bg-green-600 hover:bg-green-700 shrink-0"
           >
             <Send className="w-4 h-4" />
+          </Button>
+        </div>
+        {/* 中文翻译输入在下 */}
+        <div className="flex gap-2 items-center">
+          <Input
+            ref={draftRef}
+            value={draftZh}
+            onChange={(e) => setDraftZh(e.target.value)}
+            placeholder={ac.draftPlaceholder}
+            disabled={sending || translating}
+            className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"
+          />
+          <Button
+            type="button"
+            disabled={!draftZh.trim() || translating || sending}
+            onClick={handleTranslateDraft}
+            className="h-10 shrink-0 bg-amber-600 hover:bg-amber-700 gap-1"
+          >
+            <Languages className="w-4 h-4" />
+            {translating ? ac.translating : ac.translateBtn}
           </Button>
         </div>
       </div>
