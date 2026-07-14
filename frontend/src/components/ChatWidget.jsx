@@ -23,7 +23,6 @@ import {
   extractClipboardImageFile,
 } from '../utils/chatConstants';
 import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications';
-import ImageSendPreview from './ImageSendPreview';
 
 const API = '/api';
 const SESSION_KEY = 'chat_session_id';
@@ -61,7 +60,6 @@ const ChatWidget = () => {
   const [registering, setRegistering] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [previewImage, setPreviewImage] = useState(null); // { file, previewUrl } | null
   const [unread, setUnread] = useState(0);
   const [chatBlocked, setChatBlocked] = useState(false);
   const chatBlockedRef = useRef(false);
@@ -74,7 +72,7 @@ const ChatWidget = () => {
   const pendingFilesRef = useRef(new Map());
   const lastAdminMsgKeyRef = useRef(null);
   const notificationsReadyRef = useRef(false);
-  const pasteLockRef = useRef(false);
+  const uploadImageBusyRef = useRef(false);
 
   const notifyNewAdminMessages = useCallback((serverMsgs) => {
     const adminMsgs = (serverMsgs || []).filter((m) => m.sender === 'admin' && m.message_id);
@@ -520,7 +518,8 @@ const ChatWidget = () => {
   };
 
   const uploadImageFile = async (file) => {
-    if (!file || uploading || chatBlocked || needsRegister) return;
+    if (!file || uploadImageBusyRef.current || chatBlocked || needsRegister) return;
+    uploadImageBusyRef.current = true;
 
     setPhoneError('');
     setUploading(true);
@@ -571,6 +570,7 @@ const ChatWidget = () => {
       setPhoneError(getApiErrorMessage(err, t.chat.imageUploadFailed, t));
     } finally {
       URL.revokeObjectURL(previewUrl);
+      uploadImageBusyRef.current = false;
       setUploading(false);
       inputRef.current?.focus();
     }
@@ -579,38 +579,21 @@ const ChatWidget = () => {
   const handleImageSelect = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file || uploading || chatBlocked || needsRegister) return;
+    if (!file || uploadImageBusyRef.current || chatBlocked || needsRegister) return;
     if (!isSupportedImageFile(file)) { setPhoneError(t.chat.imageUnsupported); return; }
     if (file.size > MAX_IMAGE_SIZE_BYTES) { setPhoneError(t.chat.imageTooLarge); return; }
-    setPreviewImage({ file, previewUrl: URL.createObjectURL(file) });
+    uploadImageFile(file);
   };
 
   const handlePasteImage = (e) => {
-    if (pasteLockRef.current || chatBlocked || needsRegister || uploading) return;
+    if (uploadImageBusyRef.current || chatBlocked || needsRegister) return;
     const file = extractClipboardImageFile(e.clipboardData);
     if (!file) return;
     e.preventDefault();
     e.stopPropagation();
-    pasteLockRef.current = true;
-    if (!isSupportedImageFile(file)) { setPhoneError(t.chat.imageUnsupported); pasteLockRef.current = false; return; }
-    if (file.size > MAX_IMAGE_SIZE_BYTES) { setPhoneError(t.chat.imageTooLarge); pasteLockRef.current = false; return; }
-    setPreviewImage({ file, previewUrl: URL.createObjectURL(file) });
-  };
-
-  const handleConfirmImage = () => {
-    if (!previewImage) return;
-    const file = previewImage.file;
-    URL.revokeObjectURL(previewImage.previewUrl);
-    setPreviewImage(null);
-    pasteLockRef.current = false;
+    if (!isSupportedImageFile(file)) { setPhoneError(t.chat.imageUnsupported); return; }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) { setPhoneError(t.chat.imageTooLarge); return; }
     uploadImageFile(file);
-  };
-
-  const handleCancelImage = () => {
-    if (!previewImage) return;
-    URL.revokeObjectURL(previewImage.previewUrl);
-    setPreviewImage(null);
-    pasteLockRef.current = false;
   };
 
   const handleKeyDown = (e) => {
@@ -772,17 +755,6 @@ const ChatWidget = () => {
           )}
         </button>
       )}
-
-      <ImageSendPreview
-        open={!!previewImage}
-        previewUrl={previewImage?.previewUrl || ''}
-        filename={previewImage?.file?.name || ''}
-        title={t.chat.imagePreviewTitle}
-        confirmLabel={t.chat.imagePreviewConfirm}
-        cancelLabel={t.chat.imagePreviewCancel}
-        onConfirm={handleConfirmImage}
-        onCancel={handleCancelImage}
-      />
     </>
   );
 };
