@@ -74,6 +74,7 @@ const ChatWidget = () => {
   const pendingFilesRef = useRef(new Map());
   const lastAdminMsgKeyRef = useRef(null);
   const notificationsReadyRef = useRef(false);
+  const pasteLockRef = useRef(false);
 
   const notifyNewAdminMessages = useCallback((serverMsgs) => {
     const adminMsgs = (serverMsgs || []).filter((m) => m.sender === 'admin' && m.message_id);
@@ -585,13 +586,14 @@ const ChatWidget = () => {
   };
 
   const handlePasteImage = (e) => {
-    if (chatBlocked || needsRegister || uploading) return;
+    if (pasteLockRef.current || chatBlocked || needsRegister || uploading) return;
     const file = extractClipboardImageFile(e.clipboardData);
     if (!file) return;
     e.preventDefault();
     e.stopPropagation();
-    if (!isSupportedImageFile(file)) { setPhoneError(t.chat.imageUnsupported); return; }
-    if (file.size > MAX_IMAGE_SIZE_BYTES) { setPhoneError(t.chat.imageTooLarge); return; }
+    pasteLockRef.current = true;
+    if (!isSupportedImageFile(file)) { setPhoneError(t.chat.imageUnsupported); pasteLockRef.current = false; return; }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) { setPhoneError(t.chat.imageTooLarge); pasteLockRef.current = false; return; }
     setPreviewImage({ file, previewUrl: URL.createObjectURL(file) });
   };
 
@@ -600,6 +602,7 @@ const ChatWidget = () => {
     const file = previewImage.file;
     URL.revokeObjectURL(previewImage.previewUrl);
     setPreviewImage(null);
+    pasteLockRef.current = false;
     uploadImageFile(file);
   };
 
@@ -607,6 +610,7 @@ const ChatWidget = () => {
     if (!previewImage) return;
     URL.revokeObjectURL(previewImage.previewUrl);
     setPreviewImage(null);
+    pasteLockRef.current = false;
   };
 
   const handleKeyDown = (e) => {

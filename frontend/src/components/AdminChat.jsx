@@ -94,6 +94,7 @@ const AdminChat = ({
   const prevUnreadRef = useRef(null);
   const notificationsReadyRef = useRef(false);
   const translatingIdsRef = useRef(new Set());
+  const pasteLockRef = useRef(false);
   const [blacklistIpInput, setBlacklistIpInput] = useState('');
   const [presenceTick, setPresenceTick] = useState(0);
 
@@ -560,13 +561,14 @@ const AdminChat = ({
   };
 
   const handlePasteImage = (e) => {
-    if (!selectedSessionId || uploading) return;
+    if (pasteLockRef.current || !selectedSessionId || uploading) return;
     const file = extractClipboardImageFile(e.clipboardData);
     if (!file) return;
     e.preventDefault();
     e.stopPropagation();
-    if (!isSupportedImageFile(file)) { toast.error(t.chat.imageUnsupported); return; }
-    if (file.size > MAX_IMAGE_SIZE_BYTES) { toast.error(t.chat.imageTooLarge); return; }
+    pasteLockRef.current = true;
+    if (!isSupportedImageFile(file)) { toast.error(t.chat.imageUnsupported); pasteLockRef.current = false; return; }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) { toast.error(t.chat.imageTooLarge); pasteLockRef.current = false; return; }
     setPreviewImage({ file, previewUrl: URL.createObjectURL(file) });
   };
 
@@ -575,6 +577,7 @@ const AdminChat = ({
     const file = previewImage.file;
     URL.revokeObjectURL(previewImage.previewUrl);
     setPreviewImage(null);
+    pasteLockRef.current = false;
     uploadImageFile(file);
   };
 
@@ -582,6 +585,7 @@ const AdminChat = ({
     if (!previewImage) return;
     URL.revokeObjectURL(previewImage.previewUrl);
     setPreviewImage(null);
+    pasteLockRef.current = false;
   };
 
   const sessionPresence = (session) => {
