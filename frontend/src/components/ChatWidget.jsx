@@ -559,7 +559,6 @@ const ChatWidget = () => {
         headers: { 'Content-Type': 'multipart/form-data', ...visitorChatHeaders(visitorPhone) },
         timeout: 120000,
       });
-      URL.revokeObjectURL(previewUrl);
       removePendingMessage(sessionId.current, clientId);
       pendingFilesRef.current.delete(clientId);
       setMessages((prev) =>
@@ -577,6 +576,7 @@ const ChatWidget = () => {
       );
       setPhoneError(getApiErrorMessage(err, t.chat.imageUploadFailed, t));
     } finally {
+      URL.revokeObjectURL(previewUrl);
       setUploading(false);
       inputRef.current?.focus();
     }

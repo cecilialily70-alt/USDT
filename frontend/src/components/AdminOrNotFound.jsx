@@ -80,6 +80,12 @@ export default function AdminOrNotFound() {
     );
   }
 
-  navigate('/', { replace: true });
+  // status === 'not-found' — redirect in effect, not during render
+  useEffect(() => {
+    if (status === 'not-found') {
+      navigate('/', { replace: true });
+    }
+  }, [status, navigate]);
+
   return null;
 }

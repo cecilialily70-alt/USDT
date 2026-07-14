@@ -278,7 +278,7 @@ const AdminChat = ({
           translatingIdsRef.current.delete(mid);
         });
     });
-  }, [messages, view, provider, zhCache]);
+  }, [messages, view, provider]);
 
   const handleSelectSession = (session) => {
     const sid = session.session_id;
@@ -383,6 +383,7 @@ const AdminChat = ({
       const hebrew = (res.data?.text || text).trim();
       setPendingOriginal(text);
       setSendHe(hebrew);
+      setDraftZh('');
       setTranslateStatus(ac.translateDone);
       setTimeout(() => setTranslateStatus(''), 1800);
       sendRef.current?.focus();
