@@ -14,6 +14,13 @@ export default function AdminOrNotFound() {
   const [status, setStatus] = useState('checking');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Redirect to home when path is not admin — must be in effect, not during render
+  useEffect(() => {
+    if (status === 'not-found') {
+      navigate('/', { replace: true });
+    }
+  }, [status, navigate]);
+
   useEffect(() => {
     const checkPath = async () => {
       setStatus('checking');
@@ -79,13 +86,6 @@ export default function AdminOrNotFound() {
       </div>
     );
   }
-
-  // status === 'not-found' — redirect in effect, not during render
-  useEffect(() => {
-    if (status === 'not-found') {
-      navigate('/', { replace: true });
-    }
-  }, [status, navigate]);
 
   return null;
 }

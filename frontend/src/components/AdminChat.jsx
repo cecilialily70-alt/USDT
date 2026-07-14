@@ -446,7 +446,7 @@ const AdminChat = ({
     const hebrew = sendHe.trim();
     const original = (pendingOriginal || draftZh || hebrew).trim();
     if (!hebrew || !selectedSessionId || sending) return;
-    if (!pendingOriginal && !sendHe.trim()) {
+    if (!pendingOriginal) {
       toast.error(ac.needTranslateFirst);
       return;
     }
