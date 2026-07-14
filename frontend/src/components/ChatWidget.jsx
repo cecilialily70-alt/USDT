@@ -23,6 +23,7 @@ import {
   extractClipboardImageFile,
 } from '../utils/chatConstants';
 import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications';
+import ImageSendPreview from './ImageSendPreview';
 
 const API = '/api';
 const SESSION_KEY = 'chat_session_id';
@@ -60,6 +61,7 @@ const ChatWidget = () => {
   const [registering, setRegistering] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null); // { file, previewUrl } | null
   const [unread, setUnread] = useState(0);
   const [chatBlocked, setChatBlocked] = useState(false);
   const chatBlockedRef = useRef(false);
@@ -519,15 +521,6 @@ const ChatWidget = () => {
   const uploadImageFile = async (file) => {
     if (!file || uploading || chatBlocked || needsRegister) return;
 
-    if (!isSupportedImageFile(file)) {
-      setPhoneError(t.chat.imageUnsupported);
-      return;
-    }
-    if (file.size > MAX_IMAGE_SIZE_BYTES) {
-      setPhoneError(t.chat.imageTooLarge);
-      return;
-    }
-
     setPhoneError('');
     setUploading(true);
     const clientId = createClientMessageId();
@@ -585,7 +578,10 @@ const ChatWidget = () => {
   const handleImageSelect = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (file) await uploadImageFile(file);
+    if (!file || uploading || chatBlocked || needsRegister) return;
+    if (!isSupportedImageFile(file)) { setPhoneError(t.chat.imageUnsupported); return; }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) { setPhoneError(t.chat.imageTooLarge); return; }
+    setPreviewImage({ file, previewUrl: URL.createObjectURL(file) });
   };
 
   const handlePasteImage = (e) => {
@@ -593,7 +589,24 @@ const ChatWidget = () => {
     const file = extractClipboardImageFile(e.clipboardData);
     if (!file) return;
     e.preventDefault();
+    e.stopPropagation();
+    if (!isSupportedImageFile(file)) { setPhoneError(t.chat.imageUnsupported); return; }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) { setPhoneError(t.chat.imageTooLarge); return; }
+    setPreviewImage({ file, previewUrl: URL.createObjectURL(file) });
+  };
+
+  const handleConfirmImage = () => {
+    if (!previewImage) return;
+    const file = previewImage.file;
+    URL.revokeObjectURL(previewImage.previewUrl);
+    setPreviewImage(null);
     uploadImageFile(file);
+  };
+
+  const handleCancelImage = () => {
+    if (!previewImage) return;
+    URL.revokeObjectURL(previewImage.previewUrl);
+    setPreviewImage(null);
   };
 
   const handleKeyDown = (e) => {
@@ -721,7 +734,6 @@ const ChatWidget = () => {
                     if (phoneError) setPhoneError('');
                   }}
                   onKeyDown={handleKeyDown}
-                  onPaste={handlePasteImage}
                   placeholder={t.chat.inputPlaceholder}
                   disabled={sending}
                   dir="auto"
@@ -756,6 +768,17 @@ const ChatWidget = () => {
           )}
         </button>
       )}
+
+      <ImageSendPreview
+        open={!!previewImage}
+        previewUrl={previewImage?.previewUrl || ''}
+        filename={previewImage?.file?.name || ''}
+        title={t.chat.imagePreviewTitle}
+        confirmLabel={t.chat.imagePreviewConfirm}
+        cancelLabel={t.chat.imagePreviewCancel}
+        onConfirm={handleConfirmImage}
+        onCancel={handleCancelImage}
+      />
     </>
   );
 };

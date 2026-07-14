@@ -32,6 +32,7 @@ import {
 import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications';
 import { adminZh } from '../i18n/adminZh';
 import { useLanguage } from '../contexts/LanguageContext';
+import ImageSendPreview from './ImageSendPreview';
 
 const API = '/api';
 const SESSION_POLL_INTERVAL = 3000;
@@ -79,6 +80,7 @@ const AdminChat = ({
   );
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null); // { file, previewUrl } | null
   const [zhCache, setZhCache] = useState({});
   const zhCacheRef = useRef(zhCache);
   zhCacheRef.current = zhCache;
@@ -551,7 +553,10 @@ const AdminChat = ({
   const handleImageSelect = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (file) await uploadImageFile(file);
+    if (!file || !selectedSessionId || uploading) return;
+    if (!isSupportedImageFile(file)) { toast.error(t.chat.imageUnsupported); return; }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) { toast.error(t.chat.imageTooLarge); return; }
+    setPreviewImage({ file, previewUrl: URL.createObjectURL(file) });
   };
 
   const handlePasteImage = (e) => {
@@ -559,7 +564,24 @@ const AdminChat = ({
     const file = extractClipboardImageFile(e.clipboardData);
     if (!file) return;
     e.preventDefault();
+    e.stopPropagation();
+    if (!isSupportedImageFile(file)) { toast.error(t.chat.imageUnsupported); return; }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) { toast.error(t.chat.imageTooLarge); return; }
+    setPreviewImage({ file, previewUrl: URL.createObjectURL(file) });
+  };
+
+  const handleConfirmImage = () => {
+    if (!previewImage) return;
+    const file = previewImage.file;
+    URL.revokeObjectURL(previewImage.previewUrl);
+    setPreviewImage(null);
     uploadImageFile(file);
+  };
+
+  const handleCancelImage = () => {
+    if (!previewImage) return;
+    URL.revokeObjectURL(previewImage.previewUrl);
+    setPreviewImage(null);
   };
 
   const sessionPresence = (session) => {
@@ -831,7 +853,6 @@ const AdminChat = ({
                 handleComposerEnter();
               }
             }}
-            onPaste={handlePasteImage}
             placeholder={ac.sendPlaceholder}
             disabled={sending}
             dir="auto"
@@ -858,7 +879,6 @@ const AdminChat = ({
                 handleComposerEnter();
               }
             }}
-            onPaste={handlePasteImage}
             placeholder={ac.draftPlaceholder}
             disabled={sending || translating}
             className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"
@@ -874,6 +894,17 @@ const AdminChat = ({
           </Button>
         </div>
       </div>
+
+      <ImageSendPreview
+        open={!!previewImage}
+        previewUrl={previewImage?.previewUrl || ''}
+        filename={previewImage?.file?.name || ''}
+        title={ac.imagePreviewTitle}
+        confirmLabel={ac.imagePreviewConfirm}
+        cancelLabel={ac.imagePreviewCancel}
+        onConfirm={handleConfirmImage}
+        onCancel={handleCancelImage}
+      />
     </Card>
   );
 };

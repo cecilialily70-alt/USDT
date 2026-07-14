@@ -16,14 +16,15 @@ const ImageSendPreview = ({
 }) => {
   useEffect(() => {
     if (!open) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const onKeyDown = (e) => {
       if (e.key === 'Escape') onCancel?.();
       if (e.key === 'Enter') onConfirm?.();
     };
-    document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKeyDown);
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = prev;
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [open, onConfirm, onCancel]);
