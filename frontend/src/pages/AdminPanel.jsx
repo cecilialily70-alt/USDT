@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import axios from 'axios';
 import { getApiErrorMessage } from '../utils/chatHelpers';
 import { resolveApiSuccess } from '../utils/apiErrors';
+import { setFaviconUnreadBadge, setAdminDocumentTitle } from '../utils/faviconBadge';
 import { adminZh } from '../i18n/adminZh';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -60,17 +61,34 @@ const AdminPanel = () => {
     // 管理后台固定 LTR + 中文阅读方向
     const prevDir = document.documentElement.getAttribute('dir');
     const prevLang = document.documentElement.getAttribute('lang');
+    const prevTitle = document.title;
     document.documentElement.setAttribute('dir', 'ltr');
     document.documentElement.setAttribute('lang', 'zh-CN');
     return () => {
       if (prevDir) document.documentElement.setAttribute('dir', prevDir);
       if (prevLang) document.documentElement.setAttribute('lang', prevLang);
+      document.title = prevTitle;
+      setFaviconUnreadBadge(false);
     };
   }, []);
+
+  // Browser tab favicon red dot + title badge when there are unread chats
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setFaviconUnreadBadge(false);
+      return undefined;
+    }
+    const hasUnread = chatUnread > 0;
+    setFaviconUnreadBadge(hasUnread);
+    setAdminDocumentTitle(chatUnread, at.panelTitle);
+    return undefined;
+  }, [isAuthenticated, chatUnread, at.panelTitle]);
 
   const clearSession = useCallback(() => {
     localStorage.removeItem('admin_token');
     setIsAuthenticated(false);
+    setChatUnread(0);
+    setFaviconUnreadBadge(false);
   }, []);
 
   const onUnreadChange = useCallback((n) => {
