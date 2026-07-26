@@ -282,7 +282,7 @@ export const translations = {
         translateFailed: 'Translation failed',
         providerGoogle: 'Google',
         providerDeepseek: 'DeepSeek',
-        needTranslateFirst: 'Translate first, or fill the Hebrew box',
+        needTranslateFirst: 'Send box cannot be Chinese — use foreign text or translate first',
         zhSubtitle: 'Chinese',
         heOriginal: 'Original',
         translationFailedHint: '(translation failed)',

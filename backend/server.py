@@ -853,6 +853,87 @@ TELEGRAM_CHAT_ID = (
     or os.environ.get("TELEGRAM_CHAT_ID")
     or ""
 ).strip()
+# Optional: Telegram setWebhook secret_token ↔ header X-Telegram-Bot-Api-Secret-Token
+TG_WEBHOOK_SECRET = (
+    os.environ.get("TG_WEBHOOK_SECRET")
+    or os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+    or ""
+).strip()
+
+_IPV4_RE = re.compile(
+    r"(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)"
+)
+# Compact IPv6 candidates; validated via normalize_ip / ipaddress
+_IPV6_CANDIDATE_RE = re.compile(
+    r"(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}|::(?:[A-Fa-f0-9]{1,4}:){0,6}[A-Fa-f0-9]{1,4}|(?:[A-Fa-f0-9]{1,4}:){1,7}:"
+)
+
+
+def extract_ips_from_text(text: str) -> list[str]:
+    """Pull valid IPv4/IPv6 addresses from free-form Telegram message text."""
+    found: list[str] = []
+    for m in _IPV4_RE.finditer(text or ""):
+        ip_val = normalize_ip(m.group(0))
+        if ip_val and ip_val not in found:
+            found.append(ip_val)
+    for m in _IPV6_CANDIDATE_RE.finditer(text or ""):
+        ip_val = normalize_ip(m.group(0))
+        if ip_val and ip_val not in found:
+            found.append(ip_val)
+    return found
+
+
+async def whitelist_ips_from_bot(ips: list[str], source: str = "telegram-bot") -> list[str]:
+    """Upsert IPs into whitelist; returns successfully written IPs."""
+    ensure_mongo_context()
+    written: list[str] = []
+    now = datetime.utcnow().isoformat()
+    for user_ip in ips:
+        if not user_ip or user_ip in ("127.0.0.1", "::1", "localhost"):
+            continue
+        try:
+            await whitelist_collection.update_one(
+                {"ip": user_ip},
+                {
+                    "$set": {
+                        "ip": user_ip,
+                        "added_at": now,
+                        "auto_added": True,
+                        "source": source,
+                    }
+                },
+                upsert=True,
+            )
+            written.append(user_ip)
+        except Exception as e:
+            logger.warning("telegram-bot whitelist failed for %s: %s", user_ip, e)
+    return written
+
+
+def public_base_url(request: Request) -> str:
+    for origin in _cors_origins:
+        o = (origin or "").rstrip("/")
+        if o.startswith("https://") and "localhost" not in o and "127.0.0.1" not in o:
+            # Prefer primary production domain when present
+            if "ils-usdt" in o:
+                return o
+    for origin in _cors_origins:
+        o = (origin or "").rstrip("/")
+        if o.startswith("https://") and "localhost" not in o and "127.0.0.1" not in o:
+            return o
+    vu = (os.environ.get("VERCEL_URL") or "").strip().rstrip("/")
+    if vu:
+        return vu if vu.startswith("http") else f"https://{vu}"
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "https").split(",")[0].strip()
+    host = (
+        request.headers.get("x-forwarded-host")
+        or request.headers.get("host")
+        or ""
+    ).split(",")[0].strip()
+    if host:
+        return f"{proto}://{host}".rstrip("/")
+    return ""
+
 
 # ==========================================
 # 优化 1: 智能高可用 IP 拦截中间件 (双重接口 + 故障放行)
@@ -883,7 +964,12 @@ async def ip_block_middleware(request: Request, call_next):
     # 聊天系统对用户体验来说必须稳定：
     # 1) 不做地区限制（不调用外部 IP 地理库）
     # 2) 仅检查黑名单（后台可拉黑刷屏用户）
-    if path.startswith("/api/admin/") or path == "/api/health":
+    # Telegram webhook 必须放行（来自 Telegram 服务器）
+    if (
+        path.startswith("/api/admin/")
+        or path.startswith("/api/telegram/")
+        or path == "/api/health"
+    ):
         return await call_next(request)
 
     if path.startswith("/api/chat/"):
@@ -1095,24 +1181,161 @@ def serialize_message(doc: dict, session_id: str = "") -> dict:
         msg["image_url"] = f"/api/chat/images/{msg['image_id']}"
     return msg
 
-async def send_telegram(text: str):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return
+async def send_telegram(text: str, chat_id: str = ""):
+    if not TELEGRAM_BOT_TOKEN:
+        return False
+    cid = (chat_id or TELEGRAM_CHAT_ID or "").strip()
+    if not cid:
+        return False
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     async with httpx.AsyncClient() as client:
         try:
-            await client.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=10.0)
+            await client.post(
+                url,
+                json={"chat_id": cid, "text": text},
+                timeout=10.0,
+            )
+            return True
         except Exception:
-            pass
+            return False
 
-async def notify_new_session(visitor_name: str, visitor_phone: str, session_id: str):
+
+def _telegram_chat_allowed(chat_id) -> bool:
+    """Only accept whitelist commands from the configured ops chat."""
+    if not TELEGRAM_CHAT_ID:
+        return False
+    return str(chat_id).strip() == str(TELEGRAM_CHAT_ID).strip()
+
+
+@app.post("/api/telegram/webhook")
+async def telegram_webhook(request: Request):
+    """
+    Telegram Bot webhook: ops user sends an IP (or multiple) → add to whitelist.
+    Secure with TG_WEBHOOK_SECRET + only TELEGRAM_CHAT_ID is accepted.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        return {"ok": True}
+
+    if TG_WEBHOOK_SECRET:
+        hdr = (request.headers.get("X-Telegram-Bot-Api-Secret-Token") or "").strip()
+        ok = (
+            len(hdr) == len(TG_WEBHOOK_SECRET)
+            and hmac.compare_digest(hdr, TG_WEBHOOK_SECRET)
+        )
+        if not ok:
+            raise HTTPException(status_code=403, detail="FORBIDDEN")
+
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": True}
+
+    message = body.get("message") or body.get("edited_message") or {}
+    if not message:
+        return {"ok": True}
+
+    chat = message.get("chat") or {}
+    chat_id = chat.get("id")
+    if not _telegram_chat_allowed(chat_id):
+        # Ignore other chats silently (do not leak that a webhook exists)
+        return {"ok": True}
+
+    text = (message.get("text") or message.get("caption") or "").strip()
+    if not text:
+        return {"ok": True}
+
+    # Help / commands
+    low = text.lower().strip()
+    if low in ("/start", "/help", "帮助", "help"):
+        await send_telegram(
+            "把要放行的 IP 发给我即可自动加入白名单。\n"
+            "示例：\n8.8.8.8\n或：加白 1.2.3.4\n可一次发送多个 IP。",
+            chat_id=str(chat_id),
+        )
+        return {"ok": True}
+
+    ips = extract_ips_from_text(text)
+    if not ips:
+        # Only reply when it looks like a whitelist attempt
+        if any(k in text for k in ("白名单", "加白", "whitelist", "/wl", "/ip")) or _IPV4_RE.search(text):
+            await send_telegram(
+                "未识别到有效 IP。请直接发送，例如：\n8.8.8.8",
+                chat_id=str(chat_id),
+            )
+        return {"ok": True}
+
+    ensure_mongo_context()
+    written = await whitelist_ips_from_bot(ips, source="telegram-bot")
+    if written:
+        lines = "\n".join(f"• {ip}" for ip in written)
+        await send_telegram(
+            f"✅ 已加入白名单（{len(written)}）\n{lines}",
+            chat_id=str(chat_id),
+        )
+    else:
+        await send_telegram("❌ 白名单写入失败，请稍后重试或到后台手动添加。", chat_id=str(chat_id))
+    return {"ok": True}
+
+
+@app.post("/api/admin/telegram/setup-webhook")
+async def setup_telegram_webhook(
+    request: Request,
+    token_data: dict = Depends(verify_token),
+):
+    """Register Telegram webhook URL for this deployment (one-time after deploy)."""
+    if not TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="TELEGRAM_NOT_CONFIGURED")
+    base = public_base_url(request)
+    if not base:
+        raise HTTPException(status_code=503, detail="PUBLIC_URL_UNKNOWN")
+    webhook_url = f"{base.rstrip('/')}/api/telegram/webhook"
+    payload = {
+        "url": webhook_url,
+        "allowed_updates": ["message", "edited_message"],
+        "drop_pending_updates": True,
+    }
+    if TG_WEBHOOK_SECRET:
+        payload["secret_token"] = TG_WEBHOOK_SECRET
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook"
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(url, json=payload, timeout=20.0)
+            data = res.json() if res.content else {}
+    except Exception as e:
+        logger.warning("setWebhook failed: %s", e)
+        raise HTTPException(status_code=503, detail="TELEGRAM_SETUP_FAILED") from e
+    if not data.get("ok"):
+        raise HTTPException(
+            status_code=502,
+            detail=str(data.get("description") or "TELEGRAM_SETUP_FAILED"),
+        )
+    return {
+        "ok": True,
+        "webhook_url": webhook_url,
+        "secret_configured": bool(TG_WEBHOOK_SECRET),
+        "result": data.get("description") or "Webhook was set",
+    }
+
+
+async def notify_new_session(
+    visitor_name: str,
+    visitor_phone: str,
+    session_id: str,
+    visitor_ip: str = "",
+):
+    ip = (visitor_ip or "").strip()
     text = (
         f"🆕 新聊天会话\n\n"
         f"姓名：{visitor_name}\n"
         f"手机：{visitor_phone}\n"
+        f"IP：{ip or '-'}\n"
         f"会话：{session_id[:8]}..."
     )
-    await send_telegram(text)
+    # When Telegram ops alert is sent (with IP), auto-whitelist that visitor IP.
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        if ip:
+            await auto_whitelist_many([ip], "telegram-notify")
+        await send_telegram(text)
 
 async def send_new_session_welcome(session_id: str):
     """Auto-greet new visitors once per session (Hebrew welcome from admin side)."""
@@ -1131,16 +1354,28 @@ async def send_new_session_welcome(session_id: str):
         client_message_id=WELCOME_MESSAGE_CLIENT_ID,
     )
 
-async def notify_new_message(visitor_name: str, visitor_phone: str, preview: str, session_id: str, msg_type: str = "text"):
+async def notify_new_message(
+    visitor_name: str,
+    visitor_phone: str,
+    preview: str,
+    session_id: str,
+    msg_type: str = "text",
+    visitor_ip: str = "",
+):
+    ip = (visitor_ip or "").strip()
     label = "📷 图片消息" if msg_type == "image" else "💬 新聊天消息"
     text = (
         f"{label}\n\n"
         f"姓名：{visitor_name}\n"
         f"手机：{visitor_phone}\n"
+        f"IP：{ip or '-'}\n"
         f"会话：{session_id[:8]}...\n"
         f"内容：{preview[:200]}"
     )
-    await send_telegram(text)
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        if ip:
+            await auto_whitelist_many([ip], "telegram-notify")
+        await send_telegram(text)
 
 def utc_now_iso() -> str:
     """UTC timestamp with Z suffix for correct JS Date parsing."""
@@ -1393,7 +1628,9 @@ async def create_or_get_chat_session(
 
         if is_new:
             await send_new_session_welcome(session_id)
-            background_tasks.add_task(notify_new_session, visitor_name, visitor_phone, session_id)
+            background_tasks.add_task(
+                notify_new_session, visitor_name, visitor_phone, session_id, ip
+            )
 
         return {
             "session_id": session["session_id"],
@@ -1510,7 +1747,7 @@ async def send_visitor_message(
         client_message_id=data.client_message_id,
     )
     background_tasks.add_task(
-        notify_new_message, visitor_name, visitor_phone, content, session_id, "text"
+        notify_new_message, visitor_name, visitor_phone, content, session_id, "text", ip
     )
     return {"message": message}
 
@@ -1555,7 +1792,7 @@ async def upload_visitor_image(
         mime_type=mime_type,
     )
     background_tasks.add_task(
-        notify_new_message, vname, vphone, f"[Image] {filename}", session_id, "image"
+        notify_new_message, vname, vphone, f"[Image] {filename}", session_id, "image", ip
     )
     return {"message": message}
 

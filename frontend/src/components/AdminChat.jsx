@@ -57,6 +57,17 @@ const UnreadDot = ({ show }) =>
     />
   ) : null;
 
+/** Match backend translate.is_cjk_text — treat as Chinese if enough CJK chars. */
+const isCjkText = (text) => {
+  const s = (text || '').trim();
+  if (!s) return false;
+  const cjk = (s.match(/[\u4e00-\u9fff]/g) || []).length;
+  return cjk >= Math.max(1, Math.floor(s.length / 4));
+};
+
+const composerTextareaClass =
+  'flex-1 min-h-[40px] max-h-32 resize-y rounded-md bg-[#0a0e1a]/80 border border-white/10 text-white text-sm px-3 py-2 leading-5 outline-none focus-visible:ring-1 focus-visible:ring-white/20 disabled:opacity-50';
+
 const AdminChat = ({
   view = 'contacts',
   selectedSessionId = null,
@@ -109,10 +120,12 @@ const AdminChat = ({
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       const incoming = res.data.sessions || [];
+      // Only treat the open chat-room session as "read" for badge purposes.
+      const readingId = view === 'chat' ? selectedSessionId : null;
       const totalUnread = incoming.reduce(
         (sum, s) =>
           sum +
-          (s.session_id === selectedSessionId ? 0 : Number(s.unread_admin || 0)),
+          (s.session_id === readingId ? 0 : Number(s.unread_admin || 0)),
         0
       );
       const rawTotal = incoming.reduce((sum, s) => sum + Number(s.unread_admin || 0), 0);
@@ -126,7 +139,7 @@ const AdminChat = ({
       prevUnreadRef.current = rawTotal;
       setSessions(
         incoming.map((s) =>
-          s.session_id === selectedSessionId ? { ...s, unread_admin: 0 } : s
+          s.session_id === readingId ? { ...s, unread_admin: 0 } : s
         )
       );
       if (typeof onUnreadChange === 'function') {
@@ -137,6 +150,7 @@ const AdminChat = ({
       console.error('Failed to fetch chat sessions', e);
     }
   }, [
+    view,
     selectedSessionId,
     ac.newVisitorTitle,
     ac.newVisitorBody,
@@ -180,6 +194,9 @@ const AdminChat = ({
           }
           return merged;
         });
+        if (fullLoad) {
+          forceScrollToBottomRef.current = true;
+        }
         const latestVisitor = [...incoming]
           .reverse()
           .find((m) => m?.sender === 'visitor' && m?.created_at);
@@ -235,15 +252,32 @@ const AdminChat = ({
     const el = messagesContainerRef.current;
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (forceScrollToBottomRef.current || nearBottom) {
-      const behavior = forceScrollToBottomRef.current ? 'auto' : 'smooth';
-      forceScrollToBottomRef.current = false;
-      if (behavior === 'smooth' && typeof el.scrollTo === 'function') {
-        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    if (!(forceScrollToBottomRef.current || nearBottom)) return;
+
+    const behavior = forceScrollToBottomRef.current ? 'auto' : 'smooth';
+    const stick = forceScrollToBottomRef.current;
+    forceScrollToBottomRef.current = false;
+
+    const run = () => {
+      if (!messagesContainerRef.current) return;
+      const node = messagesContainerRef.current;
+      if (behavior === 'smooth' && typeof node.scrollTo === 'function') {
+        node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
       } else {
-        el.scrollTop = el.scrollHeight;
+        node.scrollTop = node.scrollHeight;
       }
-    }
+    };
+
+    run();
+    // Images / bilingual layout can grow after paint — re-stick when opening a chat.
+    requestAnimationFrame(() => {
+      run();
+      if (stick) {
+        requestAnimationFrame(run);
+        setTimeout(run, 80);
+        setTimeout(run, 250);
+      }
+    });
   }, [messages, zhCache]);
 
   // Auto-translate foreign messages → Chinese (visitor + admin without original)
@@ -449,9 +483,10 @@ const AdminChat = ({
 
   const handleSendReply = async () => {
     const hebrew = sendHe.trim();
-    const original = (pendingOriginal || draftZh || hebrew).trim();
+    const original = (pendingOriginal || draftZh || '').trim();
     if (!hebrew || !selectedSessionId || sending) return;
-    if (!pendingOriginal) {
+    // Allow send whenever the top box is not Chinese (manual Hebrew / other langs OK).
+    if (isCjkText(hebrew)) {
       toast.error(ac.needTranslateFirst);
       return;
     }
@@ -464,6 +499,7 @@ const AdminChat = ({
       setSendHe('');
       setPendingOriginal('');
       setTranslateStatus('');
+      forceScrollToBottomRef.current = true;
     } catch (err) {
       toast.error(getApiErrorMessage(err, ac.sendFailed, t));
     } finally {
@@ -829,7 +865,7 @@ const AdminChat = ({
 
       <div className="p-3 border-t border-white/10 space-y-2 shrink-0" onPaste={handlePasteImage}>
         {/* 发送框在上 */}
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-2 items-end">
           <input
             ref={fileInputRef}
             type="file"
@@ -847,7 +883,7 @@ const AdminChat = ({
           >
             <ImagePlus className="w-5 h-5" />
           </Button>
-          <Input
+          <textarea
             ref={sendRef}
             value={sendHe}
             onChange={(e) => setSendHe(e.target.value)}
@@ -860,11 +896,12 @@ const AdminChat = ({
             placeholder={ac.sendPlaceholder}
             disabled={sending}
             dir="auto"
-            className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"
+            rows={2}
+            className={composerTextareaClass}
           />
           <Button
             onClick={handleSendReply}
-            disabled={!sendHe.trim() || sending}
+            disabled={!sendHe.trim() || isCjkText(sendHe) || sending}
             size="icon"
             className="h-10 w-10 bg-green-600 hover:bg-green-700 shrink-0"
           >
@@ -872,8 +909,8 @@ const AdminChat = ({
           </Button>
         </div>
         {/* 中文翻译输入在下 */}
-        <div className="flex gap-2 items-center">
-          <Input
+        <div className="flex gap-2 items-end">
+          <textarea
             ref={draftRef}
             value={draftZh}
             onChange={(e) => setDraftZh(e.target.value)}
@@ -885,7 +922,8 @@ const AdminChat = ({
             }}
             placeholder={ac.draftPlaceholder}
             disabled={sending || translating}
-            className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-sm h-10"
+            rows={2}
+            className={composerTextareaClass}
           />
           <Button
             type="button"

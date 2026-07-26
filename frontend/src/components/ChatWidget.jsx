@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { MessageSquare, Send, Minimize2, Maximize2, ImagePlus } from 'lucide-react';
+import { MessageSquare, Send, Minimize2, ImagePlus } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import ChatMessageBubble from './ChatMessageBubble';
@@ -60,7 +60,6 @@ const ChatWidget = () => {
   const [registering, setRegistering] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [unread, setUnread] = useState(0);
   const [chatBlocked, setChatBlocked] = useState(false);
   const chatBlockedRef = useRef(false);
@@ -70,7 +69,6 @@ const ChatWidget = () => {
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
   const pollRef = useRef(null);
-  const messagesAreaRef = useRef(null);
   const pendingFilesRef = useRef(new Map());
   const lastAdminMsgKeyRef = useRef(null);
   const notificationsReadyRef = useRef(false);
@@ -369,14 +367,7 @@ const ChatWidget = () => {
   }, [isOpen, needsRegister, fetchOpenMessages, syncFromServer]);
 
   useEffect(() => {
-    const el = messagesAreaRef.current;
-    if (!el) return;
-    // Only auto-scroll to bottom when user hasn't scrolled up to read history.
-    // A 40px threshold prevents sensitivity on mobile where rubber-banding can trigger bounce.
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    if (isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
@@ -621,16 +612,12 @@ const ChatWidget = () => {
     <>
       {isOpen && (
         <div
-          className={`chat-panel fixed z-[100] flex flex-col overflow-hidden border border-white/10 bg-gradient-to-b from-[#0F1419] to-[#06080F] shadow-2xl transition-all duration-200
-            inset-0 h-[100dvh] w-full
-            sm:inset-auto sm:bottom-24 sm:start-6 sm:h-auto sm:w-[min(400px,calc(100vw-3rem))] sm:rounded-2xl
-            ${isExpanded ? 'sm:inset-auto sm:end-0 sm:top-0 sm:bottom-0 sm:start-auto sm:max-h-none sm:h-full sm:w-[clamp(380px,45vw,580px)] sm:rounded-2xl sm:rounded-e-none' : 'sm:max-h-[min(560px,calc(100dvh-7rem))]'}
-          `}
+          className="chat-panel fixed inset-0 z-[100] flex h-[100dvh] w-full flex-col overflow-hidden border border-white/10 bg-gradient-to-b from-[#0F1419] to-[#06080F] shadow-2xl sm:inset-auto sm:bottom-24 sm:start-6 sm:h-auto sm:max-h-[min(560px,calc(100dvh-7rem))] sm:w-[min(400px,calc(100vw-3rem))] sm:rounded-2xl"
           dir={isRTL ? 'rtl' : 'ltr'}
           role="dialog"
           aria-label={t.chat.title}
         >
-          <div className={`flex items-center justify-between border-b border-white/10 bg-gradient-to-r from-blue-600/80 to-purple-600/80 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] ${isExpanded ? 'items-center' : ''}`}>
+          <div className="flex items-center justify-between border-b border-white/10 bg-gradient-to-r from-blue-600/80 to-purple-600/80 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
                 <MessageSquare className="h-4 w-4 text-white" />
@@ -640,25 +627,14 @@ const ChatWidget = () => {
                 <p className="text-xs text-white/70">{t.chat.subtitle}</p>
               </div>
             </div>
-            <div className="flex items-center gap-0.5">
-              {/* Expand / collapse — desktop only */}
-              <button
-                type="button"
-                onClick={() => setIsExpanded((v) => !v)}
-                className="hidden sm:flex p-1 text-white/70 transition-colors hover:text-white"
-                aria-label={isExpanded ? 'Collapse' : 'Expand'}
-              >
-                {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-              </button>
-              <button
-                type="button"
-                onClick={toggleOpen}
-                className="p-1 text-white/70 transition-colors hover:text-white"
-                aria-label="Close chat"
-              >
-                <Minimize2 className="h-4 w-4" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={toggleOpen}
+              className="p-1 text-white/70 transition-colors hover:text-white"
+              aria-label="Close chat"
+            >
+              <Minimize2 className="h-4 w-4" />
+            </button>
           </div>
 
           {needsRegister ? (
@@ -698,10 +674,7 @@ const ChatWidget = () => {
             </div>
           ) : (
             <>
-              <div
-                ref={messagesAreaRef}
-                className={`min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 ${isExpanded ? 'sm:flex-1 sm:max-h-none' : 'sm:min-h-[280px] sm:max-h-[380px]'}`}
-              >
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 sm:min-h-[280px] sm:max-h-[380px]">
                 {messages.length === 0 && (
                   <p className="py-8 text-center text-sm text-gray-500">{t.chat.empty}</p>
                 )}

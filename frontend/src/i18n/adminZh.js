@@ -101,7 +101,7 @@ export const adminZh = {
     translateFailed: '翻译失败',
     providerGoogle: '谷歌',
     providerDeepseek: 'DeepSeek',
-    needTranslateFirst: '请先在下方翻译，或在上方填写要发送的内容',
+    needTranslateFirst: '发送框不能是中文，请填写外文或先翻译后再发送',
     zhSubtitle: '中文',
     heOriginal: '外文',
     translationFailedHint: '（翻译失败）',

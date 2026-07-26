@@ -1,232 +1,73 @@
-# TRON Vanity Address Generator — GPU-Accelerated (RTX 5090)
+# USDT ⇄ ILS Exchange
 
-GPU-accelerated TRON (TRC20/USDT) vanity address generator. Uses NVIDIA CUDA on an **RTX 5090 (32 GB)** to generate millions of keys per second, finding addresses where the **last 7 characters are identical** (e.g., `Txxx...AAAAAAA`, `Txxx...1111111`).
+Compliance-first USDT↔ILS exchange website for Israeli users (default language: **Hebrew / RTL**), plus a Windows desktop ops app.
 
-Matches are sent **instantly** to your Telegram chat. Status reports every **30 minutes**.
+## Project layout
 
-## Architecture
+| Path | Role |
+|------|------|
+| `frontend/` | React (CRA + CRACO), i18n `en` / `he` / `ar` |
+| `backend/server.py` | FastAPI + MongoDB (Vercel serverless) |
+| Desktop app | `../桌面程序/`（本地运行，不上传 Vercel） |
 
-```
-┌──────────────────────────┐     stdout pipe (52B/record)       ┌──────────────────────┐
-│   CUDA Binary             │ ────────────────────────────────▶ │   Go Orchestrator     │
-│   (gpu/vanity_worker)     │    32B key + 20B raw hash        │   (tron-vanity)       │
-│                           │                                    │                       │
-│   RTX 5090 GPU:           │                                    │   Goroutine pool:     │
-│   • cuRAND → private keys │                                    │   • Checker workers   │
-│   • secp256k1 → pubkeys   │                                    │   • Base58 encode     │
-│   • Keccak-256 → hashes   │                                    │   • Pattern match     │
-│   • Batch: 4M keys        │                                    │   • Telegram send     │
-└──────────────────────────┘                                    │   • 30-min reporter   │
-                                                                └──────────────────────┘
-```
+## Environment variables
 
-## One-Click Setup (on your rented server)
+Set these in Vercel (Production / Preview). See also `部署环境变量说明.txt`:
 
-```bash
-# 1. Upload project to server
-scp -r tron-address-generator user@146.115.17.138:~/
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MONGO_URL` | Yes | MongoDB Atlas connection string (`MONGODB_URI` also accepted) |
+| `JWT_SECRET` | Yes | Long random secret for admin JWT. **Do not** derive from `MONGO_URL` |
+| `ADMIN_PATH` | Recommended | Fallback admin URL path if not set in MongoDB config |
+| `CORS_ORIGINS` | Optional | Extra allowed origins, comma-separated (e.g. `https://new-domain.com`) |
+| `TG_BOT` / `TG_CHAT_ID` | Optional | Telegram ops alerts (Chinese text OK — ops only) |
+| `VERCEL_ENV` / `VERCEL_URL` | Auto | Set by Vercel |
 
-# 2. SSH into server
-ssh user@146.115.17.138
+See `backend/.env.example`. `backend/.env` is gitignored and must never be committed.
 
-# 3. Run setup
-cd ~/tron-address-generator
-bash setup.sh
-```
+## Admin entry
 
-The script will:
-- Detect your RTX 5090 automatically
-- Install Go 1.22 (if needed)
-- Install CUDA Toolkit (if needed)
-- Build everything
-- Start the generator
+1. Set `adminPath` in MongoDB `config` (or `ADMIN_PATH` env).
+2. Open `https://your-domain{adminPath}` (hidden path, not linked publicly).
+3. Log in with the admin access key stored as a **bcrypt hash** in MongoDB.
+4. Production refuses the built-in development default password.
 
-**Credentials used:**
-- Token: `8611216521:AAGXFb_Popymx2FAi3T7VCXKOX64LRmFxHY`
-- Chat ID: `8500753537`
+## Default language
 
-## Manual Build
+- Default: Hebrew (`he`), `dir=rtl`
+- Switcher: English / Hebrew / Arabic
+- API errors are English codes; the frontend maps them via `apiErrors.js` + `translations.js`
 
-### Requirements
+## Deploy (Vercel)
 
-| Component | Version |
-|-----------|---------|
-| Ubuntu | 22.04 |
-| Go | 1.21+ |
-| CUDA Toolkit | 13.0 (or 12.6) |
-| NVIDIA Driver | 550+ |
+1. Connect the repo; **Root Directory = repository root** (the folder that contains `vercel.json`, not `frontend/`).
+2. Configure env vars above (`MONGO_URL`, `JWT_SECRET`, `ADMIN_PATH`).
+3. Atlas Network Access: allow Vercel egress (or `0.0.0.0/0` if needed).
+4. Frontend build uses **npm** + `frontend/package-lock.json` (`npm ci` / `npm run build` in `vercel.json`).
+5. Preview/production on `*.vercel.app` is allowed via CORS; custom domains can also be listed in `CORS_ORIGINS`.
+6. After deploy, smoke-test: homepage → `/api/health` or `/api/config` → open chat → ping presence.
 
-### Steps
+> Note: This project uses the legacy `builds` + `routes` style in `vercel.json` (Python API + CRA frontend in one repo). Do **not** mix a top-level `functions` block with `builds` — Vercel will fail the deployment.
 
-```bash
-# 1. Install dependencies (if not using setup.sh)
-sudo apt update
-sudo apt install golang-go -y
+Python Lambda size limit is set via `maxLambdaSize` on the Python build. For `maxDuration` / memory, set them in the Vercel project **Settings → Functions** if needed.
 
-# For CUDA, follow NVIDIA's official guide:
-# https://developer.nvidia.com/cuda-downloads
+**Image uploads:** capped at **4MB** to stay under Vercel’s serverless request body limit (~4.5MB).
 
-# 2. Clone the project
-git clone https://github.com/huahuade/tron-address-generator.git
-cd tron-address-generator
+## Security notes
 
-# 3. Build (auto-detects GPU architecture)
-make
+- Admin password is hashed (bcrypt); `GET /api/admin/config` never returns the plaintext password.
+- Visitor chat reads require `session_id` + `visitor_phone` (header/query).
+- Chat images use short-lived signed URLs.
+- Login and chat write endpoints are IP rate-limited in MongoDB.
+- Chat data retention: **72 hours** without interaction — session, messages, and images are auto-deleted (TTL + cleanup job, including GridFS).
 
-# 4. Run
-./tron-vanity -token "8611216521:AAGXFb_Popymx2FAi3T7VCXKOX64LRmFxHY" -chat "8500753537"
-```
+## Desktop ops app
 
-### Custom GPU Architecture
+- Source: separate Windows app repo `wy-exchange-admin` (CustomTkinter + WebView2 chat)
+- Build via that repo’s `build.bat` / `build.py`
+- Config/session: Windows `%LOCALAPPDATA%\ExchangeAdmin\` (encrypted)
+- Ops UI language: Chinese; chat bubbles keep Hebrew/RTL; times use `Asia/Jerusalem` 24h
 
-The Makefile auto-detects your GPU via `nvidia-smi`. To override:
+## Legal pages
 
-```bash
-# RTX 5090 (Blackwell, compute capability 12.0)
-make CUDA_ARCH=sm_120
-
-# RTX 4090 (Ada Lovelace)
-make CUDA_ARCH=sm_89
-
-# H100 (Hopper)
-make CUDA_ARCH=sm_90a
-```
-
-## Tuning for Your Server
-
-Your server specs: **RTX 5090 / 32 GB VRAM / 48 CPU cores / 56 GB RAM**
-
-| Parameter | Default | Notes |
-|-----------|---------|-------|
-| GPU batch | 4,194,304 (4M) | Uses ~660 MB VRAM per batch |
-| CPU workers | 48 (capped) | One per allocated core |
-| Channel buffer | 262,144 records | ~13 MB heap |
-
-To adjust at runtime:
-
-```bash
-./tron-vanity \
-  -token "YOUR_TOKEN" \
-  -chat "YOUR_CHAT_ID" \
-  -batch 8388608 \
-  -workers 48
-```
-
-### VRAM Budget
-
-| Batch Size | Device VRAM | Host RAM |
-|-----------|-------------|---------|
-| 1M (1<<20) | ~170 MB | ~160 MB |
-| 4M (4<<20) | ~660 MB | ~640 MB |
-| 8M (8<<20) | ~1.3 GB | ~1.3 GB |
-| 16M (16<<20) | ~2.6 GB | ~2.5 GB |
-
-## Output
-
-### Telegram Messages
-
-**Startup:**
-```
-🚀 TRON 靓号生成器已启动
-
-🎯 目标: 后 7 位相同
-🖥  CPU Workers: 48
-📦 GPU Batch: 4194304
-⏰ 状态报告: 每 30 分钟
-```
-
-**Match found (instant):**
-```
-🎯 发现 TRON 靓号！
-
-🔹 地址: `TXXXxXXxXXxXXxXXxXXxXXxXXxAAAAAAA`
-🔑 私钥: `a1b2c3d4e5f6...`
-📌 模式: 后 7 位都是 'A'
-```
-
-**30-minute report:**
-```
-📊 TRON Vanity Generator 状态报告
-
-⏱  运行时间: 2h30m15s
-🔑 已生成密钥: 45000000000
-✅ 发现靓号: 3
-⚡ 当前速率: 5.12 M/s
-```
-
-## Performance Expectations (RTX 5090)
-
-| Metric | Value |
-|--------|-------|
-| Expected keys/sec | 5-20 M/s |
-| Time to find 7-char vanity | ~1 hour (avg) |
-| GPU VRAM used (4M batch) | ~660 MB |
-| CPU usage | ~15% of 48 cores |
-
-## Project Structure
-
-```
-tron-address-generator/
-├── main.go                      # Go orchestrator
-├── go.mod                       # Go module
-├── Makefile                     # Build system (auto-detects GPU)
-├── setup.sh                     # One-click deployment script
-├── README.md                    # This file
-├── cmd/
-│   └── gen_precompute/
-│       └── main.go              # Generator for precomputed G multiples
-├── gpu/
-│   ├── vanity.cu                # CUDA kernels (secp256k1, Keccak-256)
-│   └── precomputed_g.h          # Auto-generated G multiples header
-├── telegram/
-│   └── telegram.go              # Telegram Bot API client
-├── checker/
-│   └── checker.go               # CPU-side vanity pattern checker
-└── stats/
-    └── stats.go                 # Statistics + 30-min reporter
-```
-
-## Monitoring
-
-```bash
-# Watch GPU utilization
-watch -n 1 nvidia-smi
-
-# Watch application logs
-tail -f tron-vanity-*.log
-
-# Check if running
-ps aux | grep tron-vanity
-
-# Stop
-kill $(cat tron-vanity.pid)
-```
-
-## Troubleshooting
-
-### CUDA compilation errors
-- Verify nvcc version: `nvcc --version`
-- CUDA 13.0 may not be in NVIDIA's repo yet. Use `setup.sh` which auto-selects 12.6 as fallback.
-- Confirm GPU is visible: `nvidia-smi`
-
-### "no CUDA-capable device detected"
-```bash
-sudo nvidia-persistenced --user nvidia-persistenced
-sudo nvidia-smi -pm 1
-```
-
-### Telegram messages not arriving
-- Verify you messaged the bot with `/start` first
-- Check Chat ID: message `@userinfobot` on Telegram
-
-### Low GPU utilization
-- Increase batch size: `-batch 8388608`
-- The bottleneck may be PCIe bandwidth (stdout pipe). Try `-batch 16777216`.
-
-## Security Notice
-
-**Private keys are transmitted in plaintext via Telegram.** This is for learning/vanity purposes. Do not use generated addresses for significant real funds.
-
-## License
-
-MIT
+- `/terms`, `/privacy` — real routes (Footer Contact opens live chat)

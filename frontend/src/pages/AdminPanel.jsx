@@ -322,11 +322,19 @@ const AdminPanel = () => {
                   {activeTab === 'chat' ? tabs.contacts : tabs.chat}
                 </span>
               </Button>
-              <div className="min-w-0">
-                <h1 className="text-base sm:text-lg font-bold text-white truncate leading-tight">
-                  {at.panelTitle}
-                </h1>
-                <p className="text-[11px] text-gray-500 truncate hidden sm:block">{at.panelSubtitle}</p>
+              <div className="min-w-0 flex items-center gap-2">
+                <span className="relative shrink-0 inline-flex" aria-hidden>
+                  <Shield className="w-5 h-5 text-yellow-400" />
+                  {chatUnread > 0 && (
+                    <span className="absolute -top-0.5 -end-0.5 w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.85)]" />
+                  )}
+                </span>
+                <div className="min-w-0">
+                  <h1 className="text-base sm:text-lg font-bold text-white truncate leading-tight">
+                    {at.panelTitle}
+                  </h1>
+                  <p className="text-[11px] text-gray-500 truncate hidden sm:block">{at.panelSubtitle}</p>
+                </div>
               </div>
             </div>
 
