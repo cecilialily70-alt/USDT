@@ -39,12 +39,27 @@ const ChatMessageBubble = ({
     setImgError(true);
   };
 
-  const ownClass =
-    msg.sender === 'admin'
-      ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-ee-sm rtl:rounded-es-sm'
-      : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-ee-sm rtl:rounded-es-sm';
-  const otherClass = 'bg-white/10 text-gray-100 rounded-es-sm rtl:rounded-ee-sm';
-  const cls = isOwn ? ownClass : otherClass;
+  const adminBubble =
+    'bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-ee-sm rtl:rounded-es-sm';
+  const visitorOwnBubble =
+    'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-ee-sm rtl:rounded-es-sm';
+  const otherBubble = 'bg-white/10 text-gray-100 rounded-es-sm rtl:rounded-ee-sm';
+  // Admin room: swap admin ↔ visitor (background + text)
+  let cls;
+  let timeMuted;
+  if (showAdminLayout) {
+    cls = isOwn
+      ? 'bg-white/10 text-gray-100 rounded-ee-sm rtl:rounded-es-sm'
+      : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-es-sm rtl:rounded-ee-sm';
+    timeMuted = isOwn ? 'text-gray-500' : 'text-white/60';
+  } else {
+    cls = isOwn
+      ? msg.sender === 'admin'
+        ? adminBubble
+        : visitorOwnBubble
+      : otherBubble;
+    timeMuted = isOwn ? 'text-white/60' : 'text-gray-500';
+  }
 
   const topText = showAdminLayout ? foreignText ?? msg.content : msg.content;
   const bottomText = showAdminLayout ? chineseText : null;
@@ -111,9 +126,7 @@ const ChatMessageBubble = ({
             </p>
           ) : null}
 
-          <div
-            className={`flex items-center gap-1 mt-1 ${isOwn ? 'text-white/60' : 'text-gray-500'}`}
-          >
+          <div className={`flex items-center gap-1 mt-1 ${timeMuted}`}>
             <p className="text-[10px]" dir="ltr">
               {formatChatTime(msg.created_at, false, timeLocale)}
             </p>

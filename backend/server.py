@@ -394,10 +394,15 @@ class AdminSessionNote(BaseModel):
     note: str = ""
 
 
+class AdminSessionGender(BaseModel):
+    gender: str = "male"  # male | female
+
+
 class AdminTranslateRequest(BaseModel):
     text: str = ""
     target: str = "zh"  # zh | he
     provider: str = ""  # google | deepseek (optional)
+    gender: str = "male"  # customer gender for Hebrew prompts
 
 def normalize_ip(raw: str) -> str:
     candidate = (raw or "").strip()
@@ -2119,6 +2124,23 @@ async def update_session_note(
         raise HTTPException(status_code=404, detail="SESSION_NOT_FOUND")
     return {"message": "NOTE_SAVED", "admin_note": note}
 
+@app.put("/api/admin/chat/sessions/{session_id}/gender")
+async def update_session_gender(
+    session_id: str,
+    data: AdminSessionGender,
+    token_data: dict = Depends(verify_token),
+):
+    ensure_mongo_context()
+    raw = (data.gender or "male").strip().lower()
+    gender = "female" if raw in ("female", "f", "woman", "女", "女性") else "male"
+    result = await chat_sessions_collection.update_one(
+        {"session_id": session_id},
+        {"$set": {"visitor_gender": gender}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="SESSION_NOT_FOUND")
+    return {"message": "GENDER_SAVED", "visitor_gender": gender}
+
 @app.post("/api/admin/chat/sessions/{session_id}/messages")
 async def send_admin_reply(
     session_id: str,
@@ -2163,7 +2185,11 @@ async def admin_translate(
         raise HTTPException(status_code=400, detail="INVALID_TRANSLATE_TARGET")
     try:
         result = await asyncio.to_thread(
-            translate_text, text, target, data.provider or None
+            translate_text,
+            text,
+            target,
+            data.provider or None,
+            data.gender or "male",
         )
         return result
     except ValueError as e:

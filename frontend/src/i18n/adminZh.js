@@ -115,6 +115,9 @@ export const adminZh = {
     noteSave: '保存',
     noteCancel: '取消',
     doubleClickHint: '单击选择 · 双击进入聊天室',
+    genderMale: '男',
+    genderFemale: '女',
+    genderHint: '客户性别（影响希伯来语翻译提示词）',
   },
   errors: {
     verifyFailed: '验证失败',

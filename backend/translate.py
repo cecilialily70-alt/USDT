@@ -49,27 +49,36 @@ def normalize_provider(provider: Optional[str]) -> str:
         return PROVIDER_DEEPSEEK
     if p in ("google", "gtx", "谷歌", "google_translate"):
         return PROVIDER_GOOGLE
-    # Prefer DeepSeek when key is configured, otherwise Google.
     if DEEPSEEK_API_KEY:
         return PROVIDER_DEEPSEEK
     return PROVIDER_GOOGLE
 
 
-def _cache_key(text: str, target: str, provider: str) -> str:
-    raw = f"{provider}:{target}:{text}"
+def normalize_gender(gender: Optional[str]) -> str:
+    g = (gender or "male").strip().lower()
+    if g in ("female", "f", "woman", "女", "女性"):
+        return "female"
+    return "male"
+
+
+def _cache_key(text: str, target: str, provider: str, gender: str = "male") -> str:
+    raw = f"{provider}:{target}:{gender}:{text}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _cache_get(text: str, target: str, provider: str) -> Optional[str]:
-    return _cache.get(_cache_key(text, target, provider))
+def _cache_get(
+    text: str, target: str, provider: str, gender: str = "male"
+) -> Optional[str]:
+    return _cache.get(_cache_key(text, target, provider, gender))
 
 
-def _cache_set(text: str, target: str, provider: str, value: str) -> None:
+def _cache_set(
+    text: str, target: str, provider: str, gender: str, value: str
+) -> None:
     if len(_cache) >= _CACHE_MAX:
-        # Drop an arbitrary batch of oldest-ish keys
         for k in list(_cache.keys())[:200]:
             _cache.pop(k, None)
-    _cache[_cache_key(text, target, provider)] = value
+    _cache[_cache_key(text, target, provider, gender)] = value
 
 
 def _google_translate(text: str, target_lang: str) -> str:
@@ -158,26 +167,44 @@ def _deepseek_translate(system: str, user_text: str) -> str:
     return out
 
 
-def _translate_via_provider(text: str, target: str, provider: str) -> str:
-    if provider == PROVIDER_GOOGLE:
-        lang = "zh-CN" if target == "zh" else "he"
-        return _google_translate(text, lang)
+def _build_translate_system(target: str, gender: str) -> str:
+    """DeepSeek system prompts; customer gender affects Hebrew gendered forms."""
+    g = normalize_gender(gender)
+    customer_zh = "男性" if g == "male" else "女性"
+    customer_en = "male" if g == "male" else "female"
+    customer_he = "masculine" if g == "male" else "feminine"
 
     if target == "zh":
-        system = (
+        return (
             "你是专业翻译。将用户消息翻译成简体中文。"
             "只输出译文本身，不要解释、不加引号、不添加前后缀。"
             "若原文已是简体中文，原样返回。"
             "保留数字、货币符号、专有名词与换行。"
+            f"语境：以色列客户为{customer_zh}；客服人员为男性。"
+            "如原文含性别相关称呼或语法，译文语气与之一致即可。"
         )
-    else:
-        system = (
-            "You are a professional translator for Israeli customer support. "
-            "Translate the user message into natural modern Hebrew (עברית). "
-            "Output ONLY the Hebrew translation — no explanations, no quotes, no prefixes. "
-            "If the text is already Hebrew, return it unchanged. "
-            "Keep numbers, currency symbols, proper nouns, and line breaks."
-        )
+
+    return (
+        "You are a professional translator for Israeli customer support. "
+        "Translate the user message into natural modern Hebrew (עברית). "
+        "Output ONLY the Hebrew translation — no explanations, no quotes, no prefixes. "
+        "If the text is already Hebrew, return it unchanged. "
+        "Keep numbers, currency symbols, proper nouns, and line breaks. "
+        f"The Israeli customer is {customer_en}; use correct {customer_he} Hebrew "
+        "gendered grammar/forms when addressing or referring to the customer. "
+        "The support agent (staff side) is male; when the source is the agent's words, "
+        "use masculine forms for the agent's self-reference where Hebrew requires gender."
+    )
+
+
+def _translate_via_provider(
+    text: str, target: str, provider: str, gender: str = "male"
+) -> str:
+    if provider == PROVIDER_GOOGLE:
+        lang = "zh-CN" if target == "zh" else "he"
+        return _google_translate(text, lang)
+
+    system = _build_translate_system(target, gender)
     try:
         return _deepseek_translate(system, text)
     except Exception as e:
@@ -186,30 +213,61 @@ def _translate_via_provider(text: str, target: str, provider: str) -> str:
         return _google_translate(text, lang)
 
 
-def translate_text(text: str, target: str, provider: Optional[str] = None) -> dict:
+def translate_text(
+    text: str,
+    target: str,
+    provider: Optional[str] = None,
+    gender: Optional[str] = None,
+) -> dict:
     """
     Translate text to zh or he.
-    Returns { text, provider, cached }.
+    Returns { text, provider, cached, gender }.
     """
     text = (text or "").strip()
     target = (target or "").strip().lower()
     if target not in ("zh", "he"):
         raise ValueError("target must be zh or he")
+    use_gender = normalize_gender(gender)
     if not text:
-        return {"text": "", "provider": normalize_provider(provider), "cached": False}
+        return {
+            "text": "",
+            "provider": normalize_provider(provider),
+            "cached": False,
+            "gender": use_gender,
+        }
 
     use_provider = normalize_provider(provider)
 
     if target == "zh" and is_cjk_text(text) and not is_rtl_text(text):
-        return {"text": text, "provider": use_provider, "cached": True}
+        return {
+            "text": text,
+            "provider": use_provider,
+            "cached": True,
+            "gender": use_gender,
+        }
     if target == "he" and is_rtl_text(text):
-        return {"text": text, "provider": use_provider, "cached": True}
+        return {
+            "text": text,
+            "provider": use_provider,
+            "cached": True,
+            "gender": use_gender,
+        }
 
-    cached = _cache_get(text, target, use_provider)
+    cached = _cache_get(text, target, use_provider, use_gender)
     if cached is not None:
-        return {"text": cached, "provider": use_provider, "cached": True}
+        return {
+            "text": cached,
+            "provider": use_provider,
+            "cached": True,
+            "gender": use_gender,
+        }
 
-    result = _translate_via_provider(text, target, use_provider)
+    result = _translate_via_provider(text, target, use_provider, use_gender)
     if result:
-        _cache_set(text, target, use_provider, result)
-    return {"text": result or text, "provider": use_provider, "cached": False}
+        _cache_set(text, target, use_provider, use_gender, result)
+    return {
+        "text": result or text,
+        "provider": use_provider,
+        "cached": False,
+        "gender": use_gender,
+    }

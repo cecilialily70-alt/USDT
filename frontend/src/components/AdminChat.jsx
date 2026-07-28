@@ -1,14 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Badge } from './ui/badge';
-import { Card } from './ui/card';
-import ChatMessageBubble from './ChatMessageBubble';
 import {
   MessageSquare,
   Send,
   Trash2,
-  RefreshCw,
   ImagePlus,
   Ban,
   Languages,
@@ -35,6 +28,11 @@ import { adminZh } from '../i18n/adminZh';
 import { useLanguage } from '../contexts/LanguageContext';
 import ImageSendPreview from './ImageSendPreview';
 import { resolveApiSuccess } from '../utils/apiErrors';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { Card } from './ui/card';
+import ChatMessageBubble from './ChatMessageBubble';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 const API = '/api';
 const SESSION_POLL_INTERVAL = 3000;
@@ -80,7 +78,6 @@ const AdminChat = ({
   const { t } = useLanguage(); // for getApiErrorMessage mapping
   const ac = adminZh.chat;
   const [sessions, setSessions] = useState([]);
-  const [blacklist, setBlacklist] = useState([]);
   const [messages, setMessages] = useState([]);
   const [draftZh, setDraftZh] = useState('');
   const [sendHe, setSendHe] = useState('');
@@ -92,7 +89,6 @@ const AdminChat = ({
     () => localStorage.getItem(PROVIDER_KEY) || 'google'
   );
   const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [previewImage, setPreviewImage] = useState(null); // { file, previewUrl } | null
   const [zhCache, setZhCache] = useState({});
   const zhCacheRef = useRef(zhCache);
@@ -108,11 +104,11 @@ const AdminChat = ({
   const notificationsReadyRef = useRef(false);
   const translatingIdsRef = useRef(new Set());
   const pasteLockRef = useRef(false);
-  const [blacklistIpInput, setBlacklistIpInput] = useState('');
   const [presenceTick, setPresenceTick] = useState(0);
   const [noteDraft, setNoteDraft] = useState('');
-  const [noteEditingId, setNoteEditingId] = useState(null); // session_id | null
+  const [noteEditingId, setNoteEditingId] = useState(null);
   const [noteSaving, setNoteSaving] = useState(false);
+  const [genderSaving, setGenderSaving] = useState(false);
 
   const getToken = () => localStorage.getItem('admin_token');
 
@@ -169,17 +165,6 @@ const AdminChat = ({
     return undefined;
   }, []);
 
-  const fetchBlacklist = useCallback(async () => {
-    try {
-      const res = await axios.get(`${API}/admin/blacklist`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      setBlacklist(res.data.blacklist || []);
-    } catch (e) {
-      if (e.response?.status === 401) return;
-    }
-  }, []);
-
   const fetchMessages = useCallback(
     async (sessionId, since = null, fullLoad = false) => {
       try {
@@ -225,10 +210,9 @@ const AdminChat = ({
 
   useEffect(() => {
     fetchSessions();
-    fetchBlacklist();
     sessionPollRef.current = setInterval(fetchSessions, SESSION_POLL_INTERVAL);
     return () => clearInterval(sessionPollRef.current);
-  }, [fetchSessions, fetchBlacklist]);
+  }, [fetchSessions]);
 
   useEffect(() => {
     const id = setInterval(() => setPresenceTick((n) => n + 1), 5000);
@@ -289,6 +273,7 @@ const AdminChat = ({
   useEffect(() => {
     if (view !== 'chat') return;
     const token = getToken();
+    const gender = selectedSession?.visitor_gender === 'female' ? 'female' : 'male';
     messages.forEach((msg) => {
       if (msg.type === 'image') return;
       const mid = msg.message_id || msg.client_message_id;
@@ -308,7 +293,7 @@ const AdminChat = ({
       axios
         .post(
           `${API}/admin/translate`,
-          { text, target: 'zh', provider },
+          { text, target: 'zh', provider, gender },
           { headers: { Authorization: `Bearer ${token}` }, timeout: 60000 }
         )
         .then((res) => {
@@ -322,7 +307,7 @@ const AdminChat = ({
           translatingIdsRef.current.delete(mid);
         });
     });
-  }, [messages, view, provider]);
+  }, [messages, view, provider, selectedSession?.visitor_gender]);
 
   const handleSelectSession = (session) => {
     // Single click: select only (stay on contacts)
@@ -399,7 +384,6 @@ const AdminChat = ({
         );
       }
       fetchSessions();
-      fetchBlacklist();
     } catch (err) {
       toast.error(getApiErrorMessage(err, ac.operationFailed, t));
     }
@@ -423,9 +407,33 @@ const AdminChat = ({
     }
   };
 
-  const handleRefresh = () => {
-    setLoading(true);
-    Promise.all([fetchSessions(), fetchBlacklist()]).finally(() => setLoading(false));
+  const sessionGender = (session) =>
+    session?.visitor_gender === 'female' ? 'female' : 'male';
+
+  const toggleSessionGender = async () => {
+    if (!selectedSessionId || !selectedSession || genderSaving) return;
+    const next = sessionGender(selectedSession) === 'female' ? 'male' : 'female';
+    setGenderSaving(true);
+    try {
+      const res = await axios.put(
+        `${API}/admin/chat/sessions/${selectedSessionId}/gender`,
+        { gender: next },
+        { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 15000 }
+      );
+      const g = res.data?.visitor_gender || next;
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.session_id === selectedSessionId ? { ...s, visitor_gender: g } : s
+        )
+      );
+      // New gender → new prompts; drop stale auto-translations
+      setZhCache({});
+      translatingIdsRef.current.clear();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, ac.operationFailed, t));
+    } finally {
+      setGenderSaving(false);
+    }
   };
 
   const switchProvider = (p) => {
@@ -462,9 +470,10 @@ const AdminChat = ({
     setTranslating(true);
     setTranslateStatus(ac.translating);
     try {
+      const gender = sessionGender(selectedSession);
       const res = await axios.post(
         `${API}/admin/translate`,
-        { text, target: 'he', provider },
+        { text, target: 'he', provider, gender },
         { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 60000 }
       );
       const hebrew = (res.data?.text || text).trim();
@@ -683,70 +692,12 @@ const AdminChat = ({
   if (view === 'contacts') {
     return (
       <Card className="relative h-full min-h-0 flex flex-col overflow-hidden glass-card border-green-500/20 shadow-xl rounded-none sm:rounded-xl border-0 sm:border">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
-          <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Users className="w-5 h-5 text-green-400" />
-              {ac.title}
-            </h2>
-            <p className="text-[10px] text-gray-500 mt-0.5">{ac.doubleClickHint}</p>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={loading}
-            className="text-gray-400 hover:text-white"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-
-        <div className="p-3 border-b border-white/10 bg-black/20 shrink-0">
-          <p className="text-white/80 text-xs mb-2">{ac.blockSection}</p>
-          <div className="flex gap-2 items-center">
-            <Input
-              value={blacklistIpInput}
-              onChange={(e) => setBlacklistIpInput(e.target.value)}
-              placeholder={ac.ipPlaceholder}
-              className="flex-1 bg-[#0a0e1a]/80 border-white/10 text-white text-xs h-9"
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                const ip = blacklistIpInput.trim();
-                if (!ip) return;
-                toggleBlacklistByIp(ip, false);
-                setBlacklistIpInput('');
-              }}
-              className="h-9 w-9 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-            >
-              <Ban className="w-4 h-4" />
-            </Button>
-          </div>
-          <p className="text-white/60 text-[10px] mt-3 mb-1">{ac.blacklistTitle}</p>
-          <div className="max-h-20 overflow-y-auto space-y-1">
-            {blacklist.length === 0 ? (
-              <p className="text-gray-600 text-[10px]">{ac.blacklistEmpty}</p>
-            ) : (
-              blacklist.map((item) => (
-                <div key={item.ip} className="flex justify-between items-center gap-2">
-                  <span className="text-gray-400 font-mono text-[10px] truncate" dir="ltr">
-                    {item.ip}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-red-400/70 hover:text-red-300 shrink-0"
-                    onClick={() => toggleBlacklistByIp(item.ip, true)}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
+        <div className="px-4 py-3 border-b border-white/10 shrink-0">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <Users className="w-5 h-5 text-green-400" />
+            {ac.title}
+          </h2>
+          <p className="text-[10px] text-gray-500 mt-0.5">{ac.doubleClickHint}</p>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto">
@@ -782,16 +733,18 @@ const AdminChat = ({
                         )}
                         <PresenceDot online={presence.online} label={presence.label} />
                       </div>
-                      {session.visitor_phone && (
-                        <p className="text-blue-400/80 text-xs font-mono mt-0.5" dir="ltr">
-                          {session.visitor_phone}
-                        </p>
-                      )}
-                      {note ? (
-                        <p className="text-amber-300/90 text-xs truncate mt-1" title={note}>
-                          📝 {note}
-                        </p>
-                      ) : null}
+                      <div className="flex items-center gap-2 flex-wrap mt-0.5 min-w-0">
+                        {session.visitor_phone ? (
+                          <span className="text-blue-400/80 text-xs font-mono" dir="ltr">
+                            {session.visitor_phone}
+                          </span>
+                        ) : null}
+                        {note ? (
+                          <span className="text-amber-300/90 text-xs truncate max-w-[12rem]" title={note}>
+                            {note}
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="text-gray-500 text-xs truncate mt-1">
                         {session.last_message || ac.noMessages}
                       </p>
@@ -800,40 +753,38 @@ const AdminChat = ({
                         {formatChatTime(session.last_message_at, true, 'zh-CN')}
                       </p>
                     </div>
-                    <div className="flex shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-amber-400/80 hover:text-amber-300 hover:bg-amber-500/10"
-                        onClick={(e) => openNoteEditor(session, e)}
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
                         title={ac.noteBtn}
+                        onClick={(e) => openNoteEditor(session, e)}
+                        className="h-8 w-8 inline-flex items-center justify-center rounded-lg bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/25"
                       >
                         <StickyNote className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-400/60 hover:text-red-400 hover:bg-red-500/10"
+                      </button>
+                      <button
+                        type="button"
+                        title={ac.deleteConfirm}
                         onClick={(e) => handleDeleteSession(session.session_id, e)}
+                        className="h-8 w-8 inline-flex items-center justify-center rounded-lg bg-red-500/15 text-red-300 hover:bg-red-500/25 border border-red-500/25"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={
-                          session.blacklisted
-                            ? 'text-amber-300/80 hover:text-amber-200 hover:bg-amber-500/10'
-                            : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10'
-                        }
+                      </button>
+                      <button
+                        type="button"
+                        title={session.blacklisted ? ac.unblockTitle : ac.blockTitle}
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleBlacklistByIp(session.visitor_ip, session.blacklisted);
                         }}
-                        title={session.blacklisted ? ac.unblockTitle : ac.blockTitle}
+                        className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border ${
+                          session.blacklisted
+                            ? 'bg-orange-500/20 text-orange-200 border-orange-400/30 hover:bg-orange-500/30'
+                            : 'bg-rose-500/15 text-rose-300 border-rose-500/25 hover:bg-rose-500/25'
+                        }`}
                       >
                         <Ban className="w-3.5 h-3.5" />
-                      </Button>
+                      </button>
                     </div>
                   </div>
                 </button>
@@ -856,13 +807,7 @@ const AdminChat = ({
                 autoFocus
               />
               <div className="flex justify-end gap-2 mt-3">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={closeNoteEditor}
-                  className="text-gray-300"
-                >
+                <Button type="button" variant="ghost" size="sm" onClick={closeNoteEditor} className="text-gray-300">
                   {ac.noteCancel}
                 </Button>
                 <Button
@@ -894,55 +839,69 @@ const AdminChat = ({
 
   return (
     <Card className="relative h-full min-h-0 flex flex-col overflow-hidden glass-card border-green-500/20 shadow-xl rounded-none sm:rounded-xl border-0 sm:border">
-      <div className="px-3 py-2.5 border-b border-white/10 bg-black/20 shrink-0">
-        <div className="flex items-center gap-2 flex-nowrap overflow-x-auto min-h-9">
-          <p className="text-white font-medium text-sm truncate max-w-[7rem] sm:max-w-[10rem] shrink-0">
+      <div className="px-4 py-3 border-b border-white/10 bg-black/20 shrink-0">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <p className="text-white font-medium text-sm truncate max-w-[10rem] sm:max-w-[14rem]">
             {selectedSession.visitor_name || ac.guest}
           </p>
           <PresenceDot {...sessionPresence(selectedSession)} />
           {selectedSession.visitor_phone ? (
-            <span className="text-blue-400/90 text-xs font-mono shrink-0" dir="ltr">
+            <span className="text-blue-400/90 text-xs font-mono" dir="ltr">
               {selectedSession.visitor_phone}
             </span>
           ) : null}
-          <Button
-            type="button"
-            size="sm"
-            className={`h-7 text-[11px] px-2.5 shrink-0 border ${
-              provider === 'google'
-                ? 'bg-sky-600 hover:bg-sky-500 text-white border-sky-400/40'
-                : 'bg-sky-950/40 text-sky-300/80 border-sky-700/40 hover:bg-sky-900/50'
-            }`}
-            onClick={() => switchProvider('google')}
-          >
-            {ac.providerGoogle}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            className={`h-7 text-[11px] px-2.5 shrink-0 border ${
-              provider === 'deepseek'
-                ? 'bg-violet-600 hover:bg-violet-500 text-white border-violet-400/40'
-                : 'bg-violet-950/40 text-violet-300/80 border-violet-700/40 hover:bg-violet-900/50'
-            }`}
-            onClick={() => switchProvider('deepseek')}
-          >
-            {ac.providerDeepseek}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              className={`h-7 text-[11px] px-3 shrink-0 border ${
+                provider === 'google'
+                  ? 'bg-sky-600 hover:bg-sky-500 text-white border-sky-400/40'
+                  : 'bg-sky-950/40 text-sky-300/80 border-sky-700/40 hover:bg-sky-900/50'
+              }`}
+              onClick={() => switchProvider('google')}
+            >
+              {ac.providerGoogle}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className={`h-7 text-[11px] px-3 shrink-0 border ${
+                provider === 'deepseek'
+                  ? 'bg-violet-600 hover:bg-violet-500 text-white border-violet-400/40'
+                  : 'bg-violet-950/40 text-violet-300/80 border-violet-700/40 hover:bg-violet-900/50'
+              }`}
+              onClick={() => switchProvider('deepseek')}
+            >
+              {ac.providerDeepseek}
+            </Button>
+          </div>
+          {(selectedSession.admin_note || '').trim() ? (
+            <button
+              type="button"
+              onClick={(e) => openNoteEditor(selectedSession, e)}
+              className="text-[12px] text-amber-300/95 hover:text-amber-200 truncate max-w-[10rem]"
+              title={ac.noteBtn}
+            >
+              {(selectedSession.admin_note || '').trim()}
+            </button>
+          ) : null}
           <button
             type="button"
-            onClick={(e) => openNoteEditor(selectedSession, e)}
-            className="inline-flex items-center gap-1 text-[11px] text-amber-300/90 hover:text-amber-200 shrink-0 max-w-[10rem] truncate"
-            title={ac.noteBtn}
+            disabled={genderSaving}
+            onClick={toggleSessionGender}
+            className={`h-7 px-2.5 rounded-md text-[11px] border shrink-0 ${
+              sessionGender(selectedSession) === 'female'
+                ? 'bg-pink-600/80 border-pink-400/40 text-white'
+                : 'bg-sky-700/80 border-sky-400/40 text-white'
+            }`}
+            title={ac.genderHint}
           >
-            <StickyNote className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">
-              {(selectedSession.admin_note || '').trim() || ac.noteEmpty}
-            </span>
+            {sessionGender(selectedSession) === 'female' ? ac.genderFemale : ac.genderMale}
           </button>
         </div>
         {translateStatus ? (
-          <p className="text-[11px] text-amber-300/90 mt-1">{translateStatus}</p>
+          <p className="text-[11px] text-amber-300/90 mt-2">{translateStatus}</p>
         ) : null}
       </div>
 
