@@ -103,6 +103,8 @@ const AdminChat = ({
   const prevUnreadRef = useRef(null);
   const notificationsReadyRef = useRef(false);
   const translatingIdsRef = useRef(new Set());
+  /** Bumps on gender/provider change so in-flight auto-translates are ignored. */
+  const translateGenRef = useRef(0);
   const pasteLockRef = useRef(false);
   const [presenceTick, setPresenceTick] = useState(0);
   const [noteDraft, setNoteDraft] = useState('');
@@ -274,6 +276,7 @@ const AdminChat = ({
     if (view !== 'chat') return;
     const token = getToken();
     const gender = selectedSession?.visitor_gender === 'female' ? 'female' : 'male';
+    const gen = translateGenRef.current;
     messages.forEach((msg) => {
       if (msg.type === 'image') return;
       const mid = msg.message_id || msg.client_message_id;
@@ -297,9 +300,11 @@ const AdminChat = ({
           { headers: { Authorization: `Bearer ${token}` }, timeout: 60000 }
         )
         .then((res) => {
+          if (gen !== translateGenRef.current) return;
           setZhCache((prev) => ({ ...prev, [mid]: res.data?.text || text }));
         })
         .catch((err) => {
+          if (gen !== translateGenRef.current) return;
           console.warn('translate zh failed', err?.response?.status, err?.message);
           setZhCache((prev) => ({ ...prev, [mid]: '' }));
         })
@@ -426,9 +431,12 @@ const AdminChat = ({
           s.session_id === selectedSessionId ? { ...s, visitor_gender: g } : s
         )
       );
-      // New gender → new prompts; drop stale auto-translations
+      // New gender → new prompts; drop stale auto-translations + composer Hebrew
+      translateGenRef.current += 1;
       setZhCache({});
       translatingIdsRef.current.clear();
+      setSendHe('');
+      setPendingOriginal('');
     } catch (err) {
       toast.error(getApiErrorMessage(err, ac.operationFailed, t));
     } finally {
@@ -439,6 +447,10 @@ const AdminChat = ({
   const switchProvider = (p) => {
     setProvider(p);
     localStorage.setItem(PROVIDER_KEY, p);
+    // Provider change must re-run auto-translate (esp. Google → DeepSeek + gender)
+    translateGenRef.current += 1;
+    setZhCache({});
+    translatingIdsRef.current.clear();
     setTranslateStatus(
       `${p === 'deepseek' ? ac.providerDeepseek : ac.providerGoogle}`
     );
@@ -480,7 +492,12 @@ const AdminChat = ({
       setPendingOriginal(text);
       setSendHe(hebrew);
       setDraftZh('');
-      setTranslateStatus(ac.translateDone);
+      const used = (res.data?.provider || provider || '').toLowerCase();
+      if (used === 'google' && provider === 'deepseek') {
+        setTranslateStatus(`${ac.translateDone}（已回退谷歌）`);
+      } else {
+        setTranslateStatus(ac.translateDone);
+      }
       setTimeout(() => setTranslateStatus(''), 1800);
       sendRef.current?.focus();
     } catch (err) {

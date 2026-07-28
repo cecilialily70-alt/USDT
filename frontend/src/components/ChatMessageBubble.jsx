@@ -39,26 +39,24 @@ const ChatMessageBubble = ({
     setImgError(true);
   };
 
-  const adminBubble =
-    'bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-ee-sm rtl:rounded-es-sm';
-  const visitorOwnBubble =
-    'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-ee-sm rtl:rounded-es-sm';
-  const otherBubble = 'bg-white/10 text-gray-100 rounded-es-sm rtl:rounded-ee-sm';
-  // Admin room: swap admin ↔ visitor (background + text)
+  const roundOwn = 'rounded-ee-sm rtl:rounded-es-sm';
+  const roundOther = 'rounded-es-sm rtl:rounded-ee-sm';
+  const round = isOwn ? roundOwn : roundOther;
+  // Swapped palettes (admin ↔ visitor): colorful was "staff/own", gray was "other"
+  const styleGray = `bg-white/10 text-gray-100 ${round}`;
+  const styleGreen = `bg-gradient-to-r from-green-600 to-emerald-600 text-white ${round}`;
+  const styleBluePurple = `bg-gradient-to-r from-blue-500 to-purple-600 text-white ${round}`;
+
   let cls;
   let timeMuted;
   if (showAdminLayout) {
-    cls = isOwn
-      ? 'bg-white/10 text-gray-100 rounded-ee-sm rtl:rounded-es-sm'
-      : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-es-sm rtl:rounded-ee-sm';
+    // Admin room: staff → gray; visitor → green (swapped)
+    cls = isOwn ? styleGray : styleGreen;
     timeMuted = isOwn ? 'text-gray-500' : 'text-white/60';
   } else {
-    cls = isOwn
-      ? msg.sender === 'admin'
-        ? adminBubble
-        : visitorOwnBubble
-      : otherBubble;
-    timeMuted = isOwn ? 'text-white/60' : 'text-gray-500';
+    // Visitor widget: visitor → gray; staff → blue-purple (swapped)
+    cls = isOwn ? styleGray : styleBluePurple;
+    timeMuted = isOwn ? 'text-gray-500' : 'text-white/60';
   }
 
   const topText = showAdminLayout ? foreignText ?? msg.content : msg.content;

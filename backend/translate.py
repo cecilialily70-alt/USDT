@@ -173,6 +173,11 @@ def _build_translate_system(target: str, gender: str) -> str:
     customer_zh = "男性" if g == "male" else "女性"
     customer_en = "male" if g == "male" else "female"
     customer_he = "masculine" if g == "male" else "feminine"
+    address_hint = (
+        "address the customer in masculine 2nd person (אתה, and matching verb/adjective forms)"
+        if g == "male"
+        else "address the customer in feminine 2nd person (את, and matching verb/adjective forms)"
+    )
 
     if target == "zh":
         return (
@@ -190,27 +195,29 @@ def _build_translate_system(target: str, gender: str) -> str:
         "Output ONLY the Hebrew translation — no explanations, no quotes, no prefixes. "
         "If the text is already Hebrew, return it unchanged. "
         "Keep numbers, currency symbols, proper nouns, and line breaks. "
-        f"The Israeli customer is {customer_en}; use correct {customer_he} Hebrew "
-        "gendered grammar/forms when addressing or referring to the customer. "
-        "The support agent (staff side) is male; when the source is the agent's words, "
+        f"The Israeli customer is {customer_en}. When the message addresses or refers "
+        f"to the customer, {address_hint}. Prefer correct {customer_he} gendered "
+        "grammar; do not invent gender words that are not implied by the source. "
+        "The support agent (staff) is male; when the source is the agent's words, "
         "use masculine forms for the agent's self-reference where Hebrew requires gender."
     )
 
 
 def _translate_via_provider(
     text: str, target: str, provider: str, gender: str = "male"
-) -> str:
+) -> tuple[str, str]:
+    """Returns (translated_text, actual_provider_used)."""
+    lang = "zh-CN" if target == "zh" else "he"
     if provider == PROVIDER_GOOGLE:
-        lang = "zh-CN" if target == "zh" else "he"
-        return _google_translate(text, lang)
+        return _google_translate(text, lang), PROVIDER_GOOGLE
 
     system = _build_translate_system(target, gender)
     try:
-        return _deepseek_translate(system, text)
+        return _deepseek_translate(system, text), PROVIDER_DEEPSEEK
     except Exception as e:
         logger.warning("DeepSeek failed, falling back to Google: %s", e)
-        lang = "zh-CN" if target == "zh" else "he"
-        return _google_translate(text, lang)
+        # Cache under Google only — do not poison DeepSeek+gender cache keys
+        return _google_translate(text, lang), PROVIDER_GOOGLE
 
 
 def translate_text(
@@ -222,6 +229,7 @@ def translate_text(
     """
     Translate text to zh or he.
     Returns { text, provider, cached, gender }.
+    provider is the engine that produced the text (may differ from request on fallback).
     """
     text = (text or "").strip()
     target = (target or "").strip().lower()
@@ -262,12 +270,14 @@ def translate_text(
             "gender": use_gender,
         }
 
-    result = _translate_via_provider(text, target, use_provider, use_gender)
+    result, actual_provider = _translate_via_provider(
+        text, target, use_provider, use_gender
+    )
     if result:
-        _cache_set(text, target, use_provider, use_gender, result)
+        _cache_set(text, target, actual_provider, use_gender, result)
     return {
         "text": result or text,
-        "provider": use_provider,
+        "provider": actual_provider,
         "cached": False,
         "gender": use_gender,
     }
