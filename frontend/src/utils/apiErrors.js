@@ -36,6 +36,7 @@ const SUCCESS_TO_TOAST_KEY = {
   BLACKLIST_ADDED: 'ipBlocked',
   BLACKLIST_REMOVED: 'ipUnblocked',
   SESSION_DELETED: 'sessionDeleted',
+  NOTE_SAVED: 'noteSaved',
 };
 
 const ERROR_TO_CHAT_KEY = {

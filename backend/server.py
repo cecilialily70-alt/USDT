@@ -111,13 +111,18 @@ CHAT_RATE_LIMIT_MAX_REQUESTS = 60
 IMAGE_URL_TTL_SECONDS = 15 * 60
 COUNTRY_CACHE_TTL_SECONDS = 30 * 60
 _country_cache: dict[str, tuple[str, float]] = {}
-CHAT_RETENTION_HOURS = 72
-CHAT_RETENTION_SECONDS = CHAT_RETENTION_HOURS * 60 * 60
+CHAT_RETENTION_DAYS = 30
+CHAT_RETENTION_SECONDS = CHAT_RETENTION_DAYS * 24 * 60 * 60
+WHITELIST_RETENTION_DAYS = 7
 NEW_SESSION_WELCOME_HE = "היי, שירות המרות (ביט/פייבוקס/משיכה ללא כרטיס). איך אפשר לעזור?"
 WELCOME_MESSAGE_CLIENT_ID = "system:welcome"
 CLEANUP_INTERVAL_SECONDS = 10 * 60
+UNREAD_NOTIFY_SECONDS = 90
+UNREAD_NOTIFY_CHECK_INTERVAL_SECONDS = 15
 _last_cleanup_run_at = 0.0
+_last_unread_notify_check_at = 0.0
 _cleanup_lock = asyncio.Lock()
+_unread_notify_lock = asyncio.Lock()
 
 def normalize_admin_path(path: str) -> str:
     """Normalize admin URL path: leading slash, no trailing slash, case-insensitive."""
@@ -263,8 +268,8 @@ async def ensure_indexes():
         (blacklist_collection, "ip", {"unique": True}),
         (chat_sessions_collection, "session_id", {"unique": True}),
         (chat_sessions_collection, [("last_message_at", -1)], {}),
+        (chat_sessions_collection, "visitor_phone", {}),
         (chat_messages_collection, [("session_id", 1), ("created_at", 1)], {}),
-        (chat_messages_collection, "created_at_dt", {"expireAfterSeconds": CHAT_RETENTION_SECONDS}),
         (chat_messages_collection, "message_id", {"unique": True}),
         (db.rate_limits, [("key", 1), ("window_start", 1)], {"unique": True}),
         (db.rate_limits, "expires_at", {"expireAfterSeconds": 0}),
@@ -274,6 +279,26 @@ async def ensure_indexes():
             await collection.create_index(keys, **opts)
         except Exception as e:
             logger.warning("create_index failed for %s %s: %s", getattr(collection, "name", collection), keys, e)
+    # Message TTL: align expireAfterSeconds with CHAT_RETENTION_DAYS (drop+recreate if changed)
+    try:
+        indexes = await chat_messages_collection.index_information()
+        ttl_name = None
+        for name, info in indexes.items():
+            key = info.get("key") or []
+            if key == [("created_at_dt", 1)] or key == [["created_at_dt", 1]]:
+                ttl_name = name
+                current_ttl = info.get("expireAfterSeconds")
+                if current_ttl != CHAT_RETENTION_SECONDS:
+                    await chat_messages_collection.drop_index(name)
+                    ttl_name = None
+                break
+        if ttl_name is None:
+            await chat_messages_collection.create_index(
+                "created_at_dt",
+                expireAfterSeconds=CHAT_RETENTION_SECONDS,
+            )
+    except Exception as e:
+        logger.warning("create_index failed for created_at_dt TTL: %s", e)
     try:
         await chat_messages_collection.create_index(
             [("session_id", 1), ("client_message_id", 1)],
@@ -363,6 +388,10 @@ class AdminChatReply(BaseModel):
     content: str = ""
     client_message_id: str = ""
     content_original: str = ""
+
+
+class AdminSessionNote(BaseModel):
+    note: str = ""
 
 
 class AdminTranslateRequest(BaseModel):
@@ -721,21 +750,60 @@ async def delete_message_completely(session_id: str, message_id: str) -> bool:
         return True
     return False
 
-async def cleanup_expired_chat_data():
-    ensure_mongo_context()
-    cutoff_dt = datetime.utcnow() - timedelta(hours=CHAT_RETENTION_HOURS)
+def _session_last_chat_activity(session: dict) -> Optional[datetime]:
+    """Latest chat-related time only (not presence ping). Used for 30-day purge."""
+    times = []
+    for key in ("last_message_at", "created_at"):
+        dt = _parse_iso_datetime(session.get(key))
+        if dt is not None:
+            times.append(dt)
+    return max(times) if times else None
 
-    # 1) Drop entire sessions with no interaction for 72+ hours
+async def cleanup_expired_whitelist():
+    """Remove whitelist IPs (manual + auto) older than WHITELIST_RETENTION_DAYS."""
+    ensure_mongo_context()
+    cutoff = datetime.utcnow() - timedelta(days=WHITELIST_RETENTION_DAYS)
+    items = await whitelist_collection.find(
+        {},
+        {"ip": 1, "added_at": 1},
+    ).to_list(length=5000)
+    removed = 0
+    for item in items:
+        ip = item.get("ip")
+        if not ip:
+            continue
+        added = _parse_iso_datetime(item.get("added_at"))
+        # Missing/unparseable timestamps are treated as expired
+        if added is not None and added >= cutoff:
+            continue
+        try:
+            await whitelist_collection.delete_one({"ip": ip})
+            removed += 1
+        except Exception as e:
+            logger.warning("whitelist cleanup delete %s failed: %s", ip, e)
+    if removed:
+        logger.info("whitelist cleanup removed %s entries older than %s days", removed, WHITELIST_RETENTION_DAYS)
+
+async def cleanup_expired_chat_data():
+    """
+    Purge sessions with no new chat for CHAT_RETENTION_DAYS.
+    Deletes session row + messages + images so the next visit is a brand-new user.
+    Also cleans orphan messages/images and expired whitelist entries.
+    """
+    ensure_mongo_context()
+    cutoff_dt = datetime.utcnow() - timedelta(days=CHAT_RETENTION_DAYS)
+
+    # 1) Drop entire sessions with no new chat for 30+ days
     sessions = await chat_sessions_collection.find(
         {},
-        {"session_id": 1, "last_message_at": 1, "last_seen_at": 1, "created_at": 1},
+        {"session_id": 1, "last_message_at": 1, "created_at": 1},
     ).to_list(length=5000)
     for session in sessions:
         sid = session.get("session_id")
         if not sid:
             continue
-        last_activity = _session_last_activity(session)
-        if last_activity is None or last_activity >= cutoff_dt:
+        last_chat = _session_last_chat_activity(session)
+        if last_chat is None or last_chat >= cutoff_dt:
             continue
         try:
             await delete_session_completely(sid)
@@ -773,8 +841,7 @@ async def cleanup_expired_chat_data():
         logger.warning("orphan GridFS scan failed: %s", e)
 
     # 3) Remove session rows left without messages (legacy / edge cases)
-    # Use Z-suffixed ISO so lexicographic compare matches utc_now_iso() storage format.
-    cutoff_iso = (datetime.now(timezone.utc) - timedelta(hours=CHAT_RETENTION_HOURS)).replace(
+    cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=CHAT_RETENTION_DAYS)).replace(
         microsecond=0
     ).isoformat().replace("+00:00", "Z")
     stale_sessions = await chat_sessions_collection.find(
@@ -788,6 +855,12 @@ async def cleanup_expired_chat_data():
         remaining = await chat_messages_collection.find_one({"session_id": sid}, {"_id": 1})
         if remaining is None:
             await chat_sessions_collection.delete_one({"session_id": sid})
+
+    # 4) Whitelist: drop entries older than 7 days (auto + manual)
+    try:
+        await cleanup_expired_whitelist()
+    except Exception as e:
+        logger.warning("cleanup_expired_whitelist failed: %s", e)
 
 async def maybe_cleanup_expired_chat_data():
     global _last_cleanup_run_at
@@ -1001,6 +1074,7 @@ async def ip_block_middleware(request: Request, call_next):
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     await maybe_cleanup_expired_chat_data()
+    await maybe_notify_stale_unread()
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -1323,19 +1397,87 @@ async def notify_new_session(
     session_id: str,
     visitor_ip: str = "",
 ):
+    """Telegram: new visitor/session only (no visit pings, no per-message spam)."""
     ip = (visitor_ip or "").strip()
     text = (
-        f"🆕 新聊天会话\n\n"
+        f"🆕 新用户进线\n\n"
         f"姓名：{visitor_name}\n"
         f"手机：{visitor_phone}\n"
         f"IP：{ip or '-'}\n"
         f"会话：{session_id[:8]}..."
     )
-    # When Telegram ops alert is sent (with IP), auto-whitelist that visitor IP.
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
         if ip:
             await auto_whitelist_many([ip], "telegram-notify")
         await send_telegram(text)
+
+
+async def notify_unread_reminder(session: dict):
+    """Telegram: unread still not opened by admin after UNREAD_NOTIFY_SECONDS."""
+    if not session:
+        return
+    name = session.get("visitor_name") or "Guest"
+    phone = session.get("visitor_phone") or "-"
+    ip = (session.get("visitor_ip") or "").strip()
+    sid = session.get("session_id") or ""
+    preview = (session.get("last_message") or "")[:200]
+    unread = int(session.get("unread_admin") or 0)
+    text = (
+        f"⏰ 未读消息提醒（{UNREAD_NOTIFY_SECONDS}秒未查看）\n\n"
+        f"姓名：{name}\n"
+        f"手机：{phone}\n"
+        f"IP：{ip or '-'}\n"
+        f"未读：{unread}\n"
+        f"会话：{(sid[:8] + '...') if sid else '-'}\n"
+        f"内容：{preview}"
+    )
+    await send_telegram(text)
+
+
+async def maybe_notify_stale_unread():
+    """Serverless-friendly: periodically notify if unread sits >90s without admin view."""
+    global _last_unread_notify_check_at
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    now = time.time()
+    if now - _last_unread_notify_check_at < UNREAD_NOTIFY_CHECK_INTERVAL_SECONDS:
+        return
+    if _unread_notify_lock.locked():
+        return
+    async with _unread_notify_lock:
+        now2 = time.time()
+        if now2 - _last_unread_notify_check_at < UNREAD_NOTIFY_CHECK_INTERVAL_SECONDS:
+            return
+        _last_unread_notify_check_at = time.time()
+        try:
+            ensure_mongo_context()
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(seconds=UNREAD_NOTIFY_SECONDS)
+            ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            cursor = chat_sessions_collection.find(
+                {
+                    "unread_admin": {"$gt": 0},
+                    "unread_tg_notified": {"$ne": True},
+                    "first_unread_at": {"$lte": cutoff, "$exists": True},
+                },
+                {"_id": 0},
+            )
+            sessions = await cursor.to_list(length=40)
+            for session in sessions:
+                sid = session.get("session_id")
+                if not sid:
+                    continue
+                try:
+                    await notify_unread_reminder(session)
+                    await chat_sessions_collection.update_one(
+                        {"session_id": sid},
+                        {"$set": {"unread_tg_notified": True}},
+                    )
+                except Exception as e:
+                    logger.warning("unread telegram notify failed for %s: %s", sid, e)
+        except Exception as e:
+            logger.warning("maybe_notify_stale_unread failed: %s", e)
+
 
 async def send_new_session_welcome(session_id: str):
     """Auto-greet new visitors once per session (Hebrew welcome from admin side)."""
@@ -1354,28 +1496,65 @@ async def send_new_session_welcome(session_id: str):
         client_message_id=WELCOME_MESSAGE_CLIENT_ID,
     )
 
-async def notify_new_message(
-    visitor_name: str,
-    visitor_phone: str,
-    preview: str,
-    session_id: str,
-    msg_type: str = "text",
-    visitor_ip: str = "",
-):
-    ip = (visitor_ip or "").strip()
-    label = "📷 图片消息" if msg_type == "image" else "💬 新聊天消息"
-    text = (
-        f"{label}\n\n"
-        f"姓名：{visitor_name}\n"
-        f"手机：{visitor_phone}\n"
-        f"IP：{ip or '-'}\n"
-        f"会话：{session_id[:8]}...\n"
-        f"内容：{preview[:200]}"
+
+async def find_canonical_session_by_phone(phone: str) -> Optional[dict]:
+    """Most recent session for this normalized Israeli phone."""
+    phone = normalize_phone_digits(phone)
+    if not phone:
+        return None
+    ensure_mongo_context()
+    return await chat_sessions_collection.find_one(
+        {"visitor_phone": phone},
+        {"_id": 0},
+        sort=[("last_message_at", -1)],
     )
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        if ip:
-            await auto_whitelist_many([ip], "telegram-notify")
-        await send_telegram(text)
+
+
+async def merge_session_into(source_id: str, target_id: str) -> None:
+    """Move messages from source session into target, then drop source row."""
+    if not source_id or not target_id or source_id == target_id:
+        return
+    ensure_mongo_context()
+    await chat_messages_collection.update_many(
+        {"session_id": source_id},
+        {"$set": {"session_id": target_id}},
+    )
+    try:
+        files = await db["chat_images.files"].find(
+            {"metadata.session_id": source_id},
+            {"_id": 1},
+        ).to_list(length=500)
+        for f in files:
+            await db["chat_images.files"].update_one(
+                {"_id": f["_id"]},
+                {"$set": {"metadata.session_id": target_id}},
+            )
+    except Exception as e:
+        logger.warning("merge session images meta failed: %s", e)
+    src = await chat_sessions_collection.find_one({"session_id": source_id}, {"_id": 0})
+    if src:
+        patch = {}
+        tgt = await chat_sessions_collection.find_one({"session_id": target_id}, {"_id": 0}) or {}
+        # Prefer newer last_message
+        src_last = _parse_iso_datetime(src.get("last_message_at"))
+        tgt_last = _parse_iso_datetime(tgt.get("last_message_at"))
+        if src_last and (not tgt_last or src_last > tgt_last):
+            patch["last_message_at"] = src.get("last_message_at")
+            patch["last_message"] = src.get("last_message") or ""
+        unread = int(tgt.get("unread_admin") or 0) + int(src.get("unread_admin") or 0)
+        if unread:
+            patch["unread_admin"] = unread
+        note_src = (src.get("admin_note") or "").strip()
+        note_tgt = (tgt.get("admin_note") or "").strip()
+        if note_src and not note_tgt:
+            patch["admin_note"] = note_src
+        if patch:
+            await chat_sessions_collection.update_one(
+                {"session_id": target_id},
+                {"$set": patch},
+            )
+    await chat_sessions_collection.delete_one({"session_id": source_id})
+
 
 def utc_now_iso() -> str:
     """UTC timestamp with Z suffix for correct JS Date parsing."""
@@ -1527,6 +1706,15 @@ async def create_message_record(
     session_set = {"last_message_at": now, "last_message": preview[:100]}
     if sender == "visitor":
         session_set["last_seen_at"] = now
+        prev = await chat_sessions_collection.find_one(
+            {"session_id": session_id},
+            {"unread_admin": 1},
+        )
+        prev_unread = int((prev or {}).get("unread_admin") or 0)
+        if prev_unread <= 0:
+            # Start 90s unread reminder window when first unread arrives
+            session_set["first_unread_at"] = now
+            session_set["unread_tg_notified"] = False
     await chat_sessions_collection.update_one(
         {"session_id": session_id},
         {
@@ -1615,18 +1803,36 @@ async def create_or_get_chat_session(
         visitor_phone = validate_israeli_phone(data.visitor_phone)
         ip = get_client_ip(request)
 
-        # If session already exists, require matching phone (prevent hijack)
-        existing = await chat_sessions_collection.find_one({"session_id": session_id}, {"_id": 0})
-        if existing:
-            stored = normalize_phone_digits(existing.get("visitor_phone") or "")
-            if stored and not hmac.compare_digest(stored, visitor_phone):
-                raise HTTPException(status_code=403, detail="SESSION_ACCESS_DENIED")
+        # Same phone → reuse canonical session (sync history; do not open a new window)
+        canonical = await find_canonical_session_by_phone(visitor_phone)
+        is_brand_new_user = False
+        if canonical:
+            target_id = canonical["session_id"]
+            if session_id != target_id:
+                existing_client = await chat_sessions_collection.find_one(
+                    {"session_id": session_id}, {"_id": 1}
+                )
+                if existing_client:
+                    await merge_session_into(session_id, target_id)
+                session_id = target_id
+            session, _ = await ensure_session(session_id, visitor_name, visitor_phone, ip)
+        else:
+            existing = await chat_sessions_collection.find_one(
+                {"session_id": session_id}, {"_id": 0}
+            )
+            if existing:
+                stored = normalize_phone_digits(existing.get("visitor_phone") or "")
+                if stored and not hmac.compare_digest(stored, visitor_phone):
+                    raise HTTPException(status_code=403, detail="SESSION_ACCESS_DENIED")
+            session, is_new = await ensure_session(
+                session_id, visitor_name, visitor_phone, ip
+            )
+            is_brand_new_user = bool(is_new)
 
-        session, is_new = await ensure_session(session_id, visitor_name, visitor_phone, ip)
         if not session:
             raise HTTPException(status_code=500, detail="SESSION_CREATE_FAILED")
 
-        if is_new:
+        if is_brand_new_user:
             await send_new_session_welcome(session_id)
             background_tasks.add_task(
                 notify_new_session, visitor_name, visitor_phone, session_id, ip
@@ -1730,6 +1936,14 @@ async def send_visitor_message(
     visitor_phone = validate_israeli_phone(data.visitor_phone) if data.visitor_phone else ""
     ip = get_client_ip(request)
 
+    if visitor_phone:
+        canonical = await find_canonical_session_by_phone(visitor_phone)
+        if canonical and canonical.get("session_id") and canonical["session_id"] != session_id:
+            existing = await chat_sessions_collection.find_one({"session_id": session_id}, {"_id": 1})
+            if existing:
+                await merge_session_into(session_id, canonical["session_id"])
+            session_id = canonical["session_id"]
+
     session = await chat_sessions_collection.find_one({"session_id": session_id})
     if not session:
         if not visitor_name or not visitor_phone:
@@ -1746,10 +1960,9 @@ async def send_visitor_message(
         content=content,
         client_message_id=data.client_message_id,
     )
-    background_tasks.add_task(
-        notify_new_message, visitor_name, visitor_phone, content, session_id, "text", ip
-    )
-    return {"message": message}
+    # Frontend may still hold old session_id; include canonical id for sync
+    out = {"message": message, "session_id": session_id}
+    return out
 
 @app.post("/api/chat/upload")
 async def upload_visitor_image(
@@ -1768,9 +1981,18 @@ async def upload_visitor_image(
 
     session_id = session_id.strip()
     ip = get_client_ip(request)
-    session = await chat_sessions_collection.find_one({"session_id": session_id})
     vname = visitor_name.strip()
     vphone = validate_israeli_phone(visitor_phone) if visitor_phone else ""
+
+    if vphone:
+        canonical = await find_canonical_session_by_phone(vphone)
+        if canonical and canonical.get("session_id") and canonical["session_id"] != session_id:
+            existing = await chat_sessions_collection.find_one({"session_id": session_id}, {"_id": 1})
+            if existing:
+                await merge_session_into(session_id, canonical["session_id"])
+            session_id = canonical["session_id"]
+
+    session = await chat_sessions_collection.find_one({"session_id": session_id})
 
     if not session:
         if not vname or not vphone:
@@ -1791,10 +2013,7 @@ async def upload_visitor_image(
         filename=filename,
         mime_type=mime_type,
     )
-    background_tasks.add_task(
-        notify_new_message, vname, vphone, f"[Image] {filename}", session_id, "image", ip
-    )
-    return {"message": message}
+    return {"message": message, "session_id": session_id}
 
 @app.get("/api/chat/images/{image_id}")
 async def serve_chat_image(
@@ -1872,9 +2091,33 @@ async def get_admin_session_messages(
 
     await chat_sessions_collection.update_one(
         {"session_id": session_id},
-        {"$set": {"unread_admin": 0}},
+        {
+            "$set": {
+                "unread_admin": 0,
+                "unread_tg_notified": False,
+            },
+            "$unset": {"first_unread_at": ""},
+        },
     )
     return {"messages": messages}
+
+@app.put("/api/admin/chat/sessions/{session_id}/note")
+async def update_session_note(
+    session_id: str,
+    data: AdminSessionNote,
+    token_data: dict = Depends(verify_token),
+):
+    ensure_mongo_context()
+    note = (data.note or "").strip()
+    if len(note) > 500:
+        raise HTTPException(status_code=400, detail="NOTE_TOO_LONG")
+    result = await chat_sessions_collection.update_one(
+        {"session_id": session_id},
+        {"$set": {"admin_note": note}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="SESSION_NOT_FOUND")
+    return {"message": "NOTE_SAVED", "admin_note": note}
 
 @app.post("/api/admin/chat/sessions/{session_id}/messages")
 async def send_admin_reply(

@@ -320,8 +320,47 @@ const AdminPanel = () => {
         className="flex flex-col flex-1 min-h-0"
       >
         <header className="shrink-0 border-b border-white/10 bg-black/30 backdrop-blur-md px-3 sm:px-4 py-2.5">
-          <div className="max-w-6xl mx-auto flex flex-wrap items-center gap-2 sm:gap-3 justify-between">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="max-w-6xl mx-auto grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0 justify-self-start">
+              <span className="relative shrink-0 inline-flex" aria-hidden>
+                <Shield className="w-5 h-5 text-yellow-400" />
+                {chatUnread > 0 && (
+                  <span className="absolute -top-0.5 -end-0.5 w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.85)]" />
+                )}
+              </span>
+              <h1 className="text-base sm:text-lg font-bold text-white truncate leading-tight">
+                {at.panelTitle}
+              </h1>
+            </div>
+
+            <TabsList className="bg-white/5 border border-white/10 h-9 p-0.5 justify-self-center">
+              <TabsTrigger
+                value="contacts"
+                className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-2.5 sm:px-3 gap-1.5 relative"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>{tabs.contacts}</span>
+                {chatUnread > 0 && (
+                  <span className="absolute -top-0.5 -end-0.5 w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.85)]" />
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                value="chat"
+                className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-2.5 sm:px-3 gap-1.5"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>{tabs.chat}</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="settings"
+                className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-2.5 sm:px-3 gap-1.5"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>{tabs.settings}</span>
+              </TabsTrigger>
+            </TabsList>
+
+            <div className="flex items-center gap-2 justify-self-end">
               <Button
                 onClick={() =>
                   setActiveTab((prev) => (prev === 'chat' ? 'contacts' : 'chat'))
@@ -333,56 +372,10 @@ const AdminPanel = () => {
                     ? `切换到${tabs.contacts}`
                     : `切换到${tabs.chat}`
                 }
-                className="text-gray-300 hover:text-white hover:bg-white/10 shrink-0 -ms-1 gap-1"
+                className="text-gray-300 hover:text-white hover:bg-white/10 shrink-0 gap-1 hidden sm:inline-flex"
               >
                 <ArrowLeftRight className="w-4 h-4" />
-                <span className="text-xs hidden sm:inline">
-                  {activeTab === 'chat' ? tabs.contacts : tabs.chat}
-                </span>
               </Button>
-              <div className="min-w-0 flex items-center gap-2">
-                <span className="relative shrink-0 inline-flex" aria-hidden>
-                  <Shield className="w-5 h-5 text-yellow-400" />
-                  {chatUnread > 0 && (
-                    <span className="absolute -top-0.5 -end-0.5 w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.85)]" />
-                  )}
-                </span>
-                <div className="min-w-0">
-                  <h1 className="text-base sm:text-lg font-bold text-white truncate leading-tight">
-                    {at.panelTitle}
-                  </h1>
-                  <p className="text-[11px] text-gray-500 truncate hidden sm:block">{at.panelSubtitle}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-1 sm:flex-none justify-end">
-              <TabsList className="bg-white/5 border border-white/10 h-9 p-0.5">
-                <TabsTrigger
-                  value="contacts"
-                  className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-2.5 sm:px-3 gap-1.5 relative"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>{tabs.contacts}</span>
-                  {chatUnread > 0 && (
-                    <span className="absolute -top-0.5 -end-0.5 w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.85)]" />
-                  )}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="chat"
-                  className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-2.5 sm:px-3 gap-1.5"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>{tabs.chat}</span>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="settings"
-                  className="data-[state=active]:bg-white/15 data-[state=active]:text-white text-gray-400 px-2.5 sm:px-3 gap-1.5"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>{tabs.settings}</span>
-                </TabsTrigger>
-              </TabsList>
               <Button
                 onClick={handleLogout}
                 variant="outline"

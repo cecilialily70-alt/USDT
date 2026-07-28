@@ -13,6 +13,7 @@ import {
   Ban,
   Languages,
   Users,
+  StickyNote,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
@@ -33,6 +34,7 @@ import { requestNotificationPermission, showBrowserNotification } from '../utils
 import { adminZh } from '../i18n/adminZh';
 import { useLanguage } from '../contexts/LanguageContext';
 import ImageSendPreview from './ImageSendPreview';
+import { resolveApiSuccess } from '../utils/apiErrors';
 
 const API = '/api';
 const SESSION_POLL_INTERVAL = 3000;
@@ -108,6 +110,9 @@ const AdminChat = ({
   const pasteLockRef = useRef(false);
   const [blacklistIpInput, setBlacklistIpInput] = useState('');
   const [presenceTick, setPresenceTick] = useState(0);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteEditingId, setNoteEditingId] = useState(null); // session_id | null
+  const [noteSaving, setNoteSaving] = useState(false);
 
   const getToken = () => localStorage.getItem('admin_token');
 
@@ -320,12 +325,55 @@ const AdminChat = ({
   }, [messages, view, provider]);
 
   const handleSelectSession = (session) => {
+    // Single click: select only (stay on contacts)
+    onSelectSession?.(session);
+  };
+
+  const handleOpenSessionChat = (session) => {
     const sid = session.session_id;
     setSessions((prev) =>
       prev.map((s) => (s.session_id === sid ? { ...s, unread_admin: 0 } : s))
     );
     onSelectSession?.(session);
     onOpenChat?.();
+  };
+
+  const openNoteEditor = (session, e) => {
+    e?.stopPropagation?.();
+    e?.preventDefault?.();
+    setNoteEditingId(session.session_id);
+    setNoteDraft(session.admin_note || '');
+  };
+
+  const closeNoteEditor = () => {
+    setNoteEditingId(null);
+    setNoteDraft('');
+  };
+
+  const saveNote = async () => {
+    if (!noteEditingId || noteSaving) return;
+    setNoteSaving(true);
+    try {
+      const res = await axios.put(
+        `${API}/admin/chat/sessions/${noteEditingId}/note`,
+        { note: noteDraft },
+        { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 15000 }
+      );
+      const saved = res.data?.admin_note ?? noteDraft.trim();
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.session_id === noteEditingId ? { ...s, admin_note: saved } : s
+        )
+      );
+      toast.success(
+        resolveApiSuccess(res.data?.message, t, adminZh.toast.noteSaved)
+      );
+      closeNoteEditor();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, adminZh.toast.noteSaveFailed, t));
+    } finally {
+      setNoteSaving(false);
+    }
   };
 
   const toggleBlacklistByIp = async (ip, blacklisted) => {
@@ -634,12 +682,15 @@ const AdminChat = ({
   // ── Contacts view ──
   if (view === 'contacts') {
     return (
-      <Card className="h-full min-h-0 flex flex-col overflow-hidden glass-card border-green-500/20 shadow-xl rounded-none sm:rounded-xl border-0 sm:border">
+      <Card className="relative h-full min-h-0 flex flex-col overflow-hidden glass-card border-green-500/20 shadow-xl rounded-none sm:rounded-xl border-0 sm:border">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Users className="w-5 h-5 text-green-400" />
-            {ac.title}
-          </h2>
+          <div>
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Users className="w-5 h-5 text-green-400" />
+              {ac.title}
+            </h2>
+            <p className="text-[10px] text-gray-500 mt-0.5">{ac.doubleClickHint}</p>
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -706,13 +757,15 @@ const AdminChat = ({
               const presence = sessionPresence(session);
               const unread = Number(session.unread_admin || 0) > 0;
               const active = session.session_id === selectedSessionId;
+              const note = (session.admin_note || '').trim();
               return (
                 <button
                   key={session.session_id}
                   type="button"
                   onClick={() => handleSelectSession(session)}
+                  onDoubleClick={() => handleOpenSessionChat(session)}
                   className={`w-full text-start p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${
-                    active ? 'bg-white/10' : ''
+                    active ? 'bg-white/10 ring-1 ring-inset ring-green-500/30' : ''
                   }`}
                 >
                   <div className="flex justify-between items-start gap-2">
@@ -734,6 +787,11 @@ const AdminChat = ({
                           {session.visitor_phone}
                         </p>
                       )}
+                      {note ? (
+                        <p className="text-amber-300/90 text-xs truncate mt-1" title={note}>
+                          📝 {note}
+                        </p>
+                      ) : null}
                       <p className="text-gray-500 text-xs truncate mt-1">
                         {session.last_message || ac.noMessages}
                       </p>
@@ -743,6 +801,15 @@ const AdminChat = ({
                       </p>
                     </div>
                     <div className="flex shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-amber-400/80 hover:text-amber-300 hover:bg-amber-500/10"
+                        onClick={(e) => openNoteEditor(session, e)}
+                        title={ac.noteBtn}
+                      >
+                        <StickyNote className="w-3.5 h-3.5" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -774,6 +841,43 @@ const AdminChat = ({
             })
           )}
         </div>
+
+        {noteEditingId ? (
+          <div className="absolute inset-0 z-20 bg-black/70 flex items-center justify-center p-4">
+            <div className="w-full max-w-sm rounded-xl border border-white/15 bg-[#0a0e1a] p-4 shadow-2xl">
+              <p className="text-white text-sm font-medium mb-2">{ac.noteTitle}</p>
+              <textarea
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                rows={4}
+                maxLength={500}
+                placeholder={ac.notePlaceholder}
+                className="w-full rounded-md bg-black/40 border border-white/10 text-white text-sm px-3 py-2 outline-none focus:ring-1 focus:ring-amber-500/50 resize-y"
+                autoFocus
+              />
+              <div className="flex justify-end gap-2 mt-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={closeNoteEditor}
+                  className="text-gray-300"
+                >
+                  {ac.noteCancel}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={noteSaving}
+                  onClick={saveNote}
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  {ac.noteSave}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </Card>
     );
   }
@@ -789,48 +893,89 @@ const AdminChat = ({
   }
 
   return (
-    <Card className="h-full min-h-0 flex flex-col overflow-hidden glass-card border-green-500/20 shadow-xl rounded-none sm:rounded-xl border-0 sm:border">
-      <div className="px-4 py-3 border-b border-white/10 bg-black/20 shrink-0">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-white font-medium text-sm truncate">
-                {selectedSession.visitor_name}
-              </p>
-              <PresenceDot {...sessionPresence(selectedSession)} />
-            </div>
-            {selectedSession.visitor_phone && (
-              <p className="text-blue-400/80 text-xs font-mono" dir="ltr">
-                {selectedSession.visitor_phone}
-              </p>
-            )}
-            <p className="text-gray-500 text-xs">{selectedSession.visitor_ip}</p>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <Button
-              type="button"
-              variant={provider === 'google' ? 'default' : 'ghost'}
-              size="sm"
-              className="h-8 text-[11px] px-2"
-              onClick={() => switchProvider('google')}
-            >
-              {ac.providerGoogle}
-            </Button>
-            <Button
-              type="button"
-              variant={provider === 'deepseek' ? 'default' : 'ghost'}
-              size="sm"
-              className="h-8 text-[11px] px-2"
-              onClick={() => switchProvider('deepseek')}
-            >
-              {ac.providerDeepseek}
-            </Button>
-          </div>
+    <Card className="relative h-full min-h-0 flex flex-col overflow-hidden glass-card border-green-500/20 shadow-xl rounded-none sm:rounded-xl border-0 sm:border">
+      <div className="px-3 py-2.5 border-b border-white/10 bg-black/20 shrink-0">
+        <div className="flex items-center gap-2 flex-nowrap overflow-x-auto min-h-9">
+          <p className="text-white font-medium text-sm truncate max-w-[7rem] sm:max-w-[10rem] shrink-0">
+            {selectedSession.visitor_name || ac.guest}
+          </p>
+          <PresenceDot {...sessionPresence(selectedSession)} />
+          {selectedSession.visitor_phone ? (
+            <span className="text-blue-400/90 text-xs font-mono shrink-0" dir="ltr">
+              {selectedSession.visitor_phone}
+            </span>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            className={`h-7 text-[11px] px-2.5 shrink-0 border ${
+              provider === 'google'
+                ? 'bg-sky-600 hover:bg-sky-500 text-white border-sky-400/40'
+                : 'bg-sky-950/40 text-sky-300/80 border-sky-700/40 hover:bg-sky-900/50'
+            }`}
+            onClick={() => switchProvider('google')}
+          >
+            {ac.providerGoogle}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className={`h-7 text-[11px] px-2.5 shrink-0 border ${
+              provider === 'deepseek'
+                ? 'bg-violet-600 hover:bg-violet-500 text-white border-violet-400/40'
+                : 'bg-violet-950/40 text-violet-300/80 border-violet-700/40 hover:bg-violet-900/50'
+            }`}
+            onClick={() => switchProvider('deepseek')}
+          >
+            {ac.providerDeepseek}
+          </Button>
+          <button
+            type="button"
+            onClick={(e) => openNoteEditor(selectedSession, e)}
+            className="inline-flex items-center gap-1 text-[11px] text-amber-300/90 hover:text-amber-200 shrink-0 max-w-[10rem] truncate"
+            title={ac.noteBtn}
+          >
+            <StickyNote className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">
+              {(selectedSession.admin_note || '').trim() || ac.noteEmpty}
+            </span>
+          </button>
         </div>
         {translateStatus ? (
           <p className="text-[11px] text-amber-300/90 mt-1">{translateStatus}</p>
         ) : null}
       </div>
+
+      {noteEditingId === selectedSessionId ? (
+        <div className="absolute inset-0 z-20 bg-black/70 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-xl border border-white/15 bg-[#0a0e1a] p-4 shadow-2xl">
+            <p className="text-white text-sm font-medium mb-2">{ac.noteTitle}</p>
+            <textarea
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              rows={4}
+              maxLength={500}
+              placeholder={ac.notePlaceholder}
+              className="w-full rounded-md bg-black/40 border border-white/10 text-white text-sm px-3 py-2 outline-none focus:ring-1 focus:ring-amber-500/50 resize-y"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2 mt-3">
+              <Button type="button" variant="ghost" size="sm" onClick={closeNoteEditor} className="text-gray-300">
+                {ac.noteCancel}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={noteSaving}
+                onClick={saveNote}
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {ac.noteSave}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3" ref={messagesContainerRef}>
         {messages.map((msg) => {

@@ -74,6 +74,13 @@ const ChatWidget = () => {
   const notificationsReadyRef = useRef(false);
   const uploadImageBusyRef = useRef(false);
 
+  const adoptSessionId = useCallback((sid) => {
+    const next = (sid || '').trim();
+    if (!next || next === sessionId.current) return;
+    sessionId.current = next;
+    localStorage.setItem(SESSION_KEY, next);
+  }, []);
+
   const notifyNewAdminMessages = useCallback((serverMsgs) => {
     const adminMsgs = (serverMsgs || []).filter((m) => m.sender === 'admin' && m.message_id);
     if (!adminMsgs.length) return;
@@ -179,12 +186,14 @@ const ChatWidget = () => {
   }, [needsRegister]);
 
   const initSession = useCallback(async (name, phone) => {
-    await axios.post(`${API}/chat/session`, {
+    const res = await axios.post(`${API}/chat/session`, {
       session_id: sessionId.current,
       visitor_name: name,
       visitor_phone: phone,
     });
-  }, []);
+    adoptSessionId(res.data?.session_id);
+    return res.data;
+  }, [adoptSessionId]);
 
   const retryPendingMessages = useCallback(async () => {
     const pending = getPendingMessages(sessionId.current);
@@ -479,6 +488,7 @@ const ChatWidget = () => {
         visitor_phone: visitorPhone,
         client_message_id: clientMessageId,
       }, { headers: visitorChatHeaders(visitorPhone) });
+      adoptSessionId(res.data?.session_id);
       removePendingMessage(sessionId.current, clientMessageId);
       const serverMsg = {
         ...res.data.message,
@@ -552,6 +562,7 @@ const ChatWidget = () => {
         headers: { 'Content-Type': 'multipart/form-data', ...visitorChatHeaders(visitorPhone) },
         timeout: 120000,
       });
+      adoptSessionId(res.data?.session_id);
       removePendingMessage(sessionId.current, clientId);
       pendingFilesRef.current.delete(clientId);
       setMessages((prev) =>
