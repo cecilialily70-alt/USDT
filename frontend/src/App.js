@@ -7,7 +7,6 @@ import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import Features from './components/Features';
 import HowItWorks from './components/HowItWorks';
-import USDTCalculator from './components/USDTCalculator';
 import Security from './components/Security';
 import Reviews from './components/Reviews';
 import Footer from './components/Footer';
@@ -21,7 +20,6 @@ const HomePage = () => (
     <Hero />
     <Features />
     <HowItWorks />
-    <USDTCalculator />
     <Security />
     <Reviews />
   </>
@@ -122,8 +120,22 @@ const AppRoutes = () => {
           </MainLayout>
         }
       />
-      <Route path="/terms" element={<LegalPage type="terms" />} />
-      <Route path="/privacy" element={<LegalPage type="privacy" />} />
+      <Route
+        path="/terms"
+        element={
+          <MainLayout>
+            <LegalPage type="terms" />
+          </MainLayout>
+        }
+      />
+      <Route
+        path="/privacy"
+        element={
+          <MainLayout>
+            <LegalPage type="privacy" />
+          </MainLayout>
+        }
+      />
       <Route path="*" element={<AdminOrNotFound />} />
     </Routes>
   );

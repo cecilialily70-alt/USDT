@@ -1,27 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { usePublicConfig } from '../contexts/PublicConfigContext';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { CheckCircle2, ArrowDownUp, TrendingUp } from 'lucide-react';
+import { CheckCircle2, ArrowDownUp, TrendingUp, Clock } from 'lucide-react';
 import TradeModal from './TradeModal';
 
 const Hero = () => {
   const { t } = useLanguage();
-  const { config } = usePublicConfig();
   const [floatingIcons, setFloatingIcons] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tradeType, setTradeType] = useState('buy');
 
   useEffect(() => {
-    const icons = [
-      { symbol: '₿', color: '#F7931A', size: 40, x: 10, y: 20 },
-      { symbol: 'Ξ', color: '#627EEA', size: 35, x: 85, y: 15 },
-      { symbol: '₮', color: '#26A17B', size: 50, x: 15, y: 70 },
-      { symbol: '₪', color: '#3B82F6', size: 45, x: 80, y: 65 },
-      { symbol: '◆', color: '#8B5CF6', size: 30, x: 50, y: 10 },
-    ];
-    setFloatingIcons(icons);
+    setFloatingIcons([
+      { symbol: '₮', color: '#26A17B', size: 50, x: 12, y: 72 },
+      { symbol: '₪', color: '#3B82F6', size: 45, x: 82, y: 68 },
+      { symbol: '₮', color: '#26A17B', size: 36, x: 88, y: 18 },
+      { symbol: '₪', color: '#60A5FA', size: 32, x: 8, y: 22 },
+    ]);
   }, []);
 
   const handleTrade = (type) => {
@@ -30,16 +26,21 @@ const Hero = () => {
   };
 
   return (
-    <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#06080F] via-[#0F1419] to-[#0a0e1a] pt-16">
+    <section
+      id="home"
+      className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#06080F] via-[#0F1419] to-[#0a0e1a] pt-16"
+    >
       <div className="absolute inset-0 opacity-10">
-        <div className="absolute inset-0" style={{
-          backgroundImage: `
+        <div
+          className="absolute inset-0 animate-[grid-shift_20s_linear_infinite]"
+          style={{
+            backgroundImage: `
             linear-gradient(rgba(59, 130, 246, 0.15) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(139, 92, 246, 0.15) 1px, transparent 1px)
+            linear-gradient(90deg, rgba(38, 161, 123, 0.12) 1px, transparent 1px)
           `,
-          backgroundSize: '50px 50px',
-          animation: 'grid-shift 20s linear infinite'
-        }}></div>
+            backgroundSize: '50px 50px',
+          }}
+        />
       </div>
 
       {floatingIcons.map((icon, index) => (
@@ -52,7 +53,7 @@ const Hero = () => {
             color: icon.color,
             fontSize: `${icon.size}px`,
             animationDelay: `${index * 0.5}s`,
-            animationDuration: `${3 + index}s`
+            animationDuration: `${3 + index}s`,
           }}
         >
           {icon.symbol}
@@ -68,7 +69,7 @@ const Hero = () => {
             </Badge>
           </div>
 
-          <div className="order-2 md:order-5 flex flex-col md:flex-row gap-4 md:gap-6 justify-center mb-6 md:mb-12 max-w-4xl mx-auto w-full">
+          <div className="order-2 md:order-5 flex flex-col md:flex-row gap-4 md:gap-6 justify-center mb-6 md:mb-10 max-w-4xl mx-auto w-full">
             <div className="flex-1 glass-card border border-green-500/30 rounded-2xl p-6 md:p-8 hover:border-green-500/60 transition-all duration-300 hover:shadow-xl hover:shadow-green-500/20 metal-shine">
               <div className="flex items-center justify-center gap-3 mb-5">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-lg">
@@ -93,7 +94,7 @@ const Hero = () => {
                   <span className="text-xl">₪</span>
                 </div>
                 <ArrowDownUp className="w-5 h-5 text-blue-400" />
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center shadow-lg">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#26A17B] to-[#1a7a5e] flex items-center justify-center shadow-lg">
                   <span className="text-xl">₮</span>
                 </div>
               </div>
@@ -114,28 +115,29 @@ const Hero = () => {
             {t.hero.subtitle}
           </h2>
 
-          <p className="order-5 md:order-4 text-gray-400 text-lg md:text-xl mb-12 max-w-3xl mx-auto leading-relaxed">
+          <p className="order-5 md:order-4 text-gray-400 text-lg md:text-xl mb-6 max-w-3xl mx-auto leading-relaxed">
             {t.hero.description}
           </p>
+
+          <div className="order-6 md:order-6 flex flex-wrap items-center justify-center gap-3 text-sm text-gray-300 mb-4">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
+              <Clock className="w-3.5 h-3.5 text-[#26A17B]" />
+              {t.hero.hoursChip}
+            </span>
+            <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
+              {t.hero.settleChip}
+            </span>
+          </div>
         </div>
       </div>
 
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#0a0e1a] to-transparent"></div>
+      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#0a0e1a] to-transparent" />
 
       <TradeModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         tradeType={tradeType}
-        buyRate={config.buyRate}
-        sellRate={config.sellRate}
       />
-
-      <style jsx>{`
-        @keyframes grid-shift {
-          0% { transform: translate(0, 0); }
-          100% { transform: translate(50px, 50px); }
-        }
-      `}</style>
     </section>
   );
 };

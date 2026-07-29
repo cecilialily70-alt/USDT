@@ -1,5 +1,6 @@
 import React from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { Link } from 'react-router-dom';
 
 const Footer = () => {
   const { t } = useLanguage();
@@ -21,11 +22,13 @@ const Footer = () => {
               </div>
               <span className="gradient-text font-bold text-xl">{t.footer.brand}</span>
             </div>
-          <p className="text-gray-400">{t.footer.description}</p>
+            <p className="text-gray-400 mb-4">{t.footer.description}</p>
+            <p className="text-sm text-gray-500">{t.footer.hours}</p>
+            <p className="text-sm text-gray-500 mt-1">{t.footer.settlement}</p>
           </div>
 
           <div>
-          <h3 className="text-white font-semibold mb-4">{t.footer.quickLinksTitle}</h3>
+            <h3 className="text-white font-semibold mb-4">{t.footer.quickLinksTitle}</h3>
             <div className="flex flex-col gap-2">
               <a href="#home" className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.navbar.home}
@@ -36,21 +39,21 @@ const Footer = () => {
               <a href="#how-it-works" className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.navbar.howItWorks}
               </a>
-              <a href="#reviews" className="text-gray-400 hover:text-[#26A17B] transition-colors">
-                {t.navbar.reviews}
+              <a href="#trust" className="text-gray-400 hover:text-[#26A17B] transition-colors">
+                {t.navbar.trust}
               </a>
             </div>
           </div>
 
           <div>
-          <h3 className="text-white font-semibold mb-4">{t.footer.legalTitle}</h3>
+            <h3 className="text-white font-semibold mb-4">{t.footer.legalTitle}</h3>
             <div className="flex flex-col gap-2">
-              <a href="/terms" className="text-gray-400 hover:text-[#26A17B] transition-colors">
+              <Link to="/terms" className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.footer.terms}
-              </a>
-              <a href="/privacy" className="text-gray-400 hover:text-[#26A17B] transition-colors">
+              </Link>
+              <Link to="/privacy" className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.footer.privacy}
-              </a>
+              </Link>
               <a href="#chat" onClick={openChat} className="text-gray-400 hover:text-[#26A17B] transition-colors">
                 {t.footer.contact}
               </a>
@@ -59,7 +62,9 @@ const Footer = () => {
         </div>
 
         <div className="pt-8 border-t border-white/10 text-center text-gray-500">
-          <p>© {currentYear} {t.footer.brand}. {t.footer.rights}</p>
+          <p>
+            © {currentYear} {t.footer.brand}. {t.footer.rights}
+          </p>
         </div>
       </div>
     </footer>
