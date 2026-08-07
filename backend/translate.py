@@ -148,7 +148,7 @@ def _deepseek_translate(system: str, user_text: str) -> str:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=45) as resp:
+        with urllib.request.urlopen(req, timeout=35) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")[:200]

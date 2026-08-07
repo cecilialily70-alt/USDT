@@ -77,7 +77,7 @@ export const adminZh = {
     deleteConfirm: '确定删除此会话？',
     deleted: '会话已删除',
     deleteFailed: '删除失败',
-    deleteMessageConfirm: '确定删除这条消息？',
+    deleteMessageConfirm: '静默删除这条消息？对方不会收到提示。',
     deleteMessageDone: '消息已删除',
     deleteMessageFailed: '删除消息失败',
     deleteMessage: '删除',

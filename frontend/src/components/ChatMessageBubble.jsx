@@ -1,8 +1,33 @@
 import React, { useMemo, useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { formatChatTime, resolveChatImageUrl } from '../utils/chatHelpers';
-import { Loader2, AlertCircle, ImageIcon } from 'lucide-react';
+import { formatChatTime, resolveChatImageUrl, linkifyTextParts } from '../utils/chatHelpers';
+import { Loader2, AlertCircle, ImageIcon, Trash2 } from 'lucide-react';
 import ChatImageViewer from './ChatImageViewer';
+
+const LinkifiedText = ({ text, className, dir }) => {
+  const parts = useMemo(() => linkifyTextParts(text), [text]);
+  if (!text) return null;
+  return (
+    <p className={className} dir={dir || 'auto'}>
+      {parts.map((part, i) =>
+        part.type === 'link' ? (
+          <a
+            key={i}
+            href={part.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 break-all hover:opacity-90"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {part.value}
+          </a>
+        ) : (
+          <React.Fragment key={i}>{part.value}</React.Fragment>
+        )
+      )}
+    </p>
+  );
+};
 
 /**
  * Admin: pass showAdminLayout + foreignText (top) + chineseText (bottom).
@@ -12,6 +37,8 @@ const ChatMessageBubble = ({
   msg,
   isOwn,
   onRetry,
+  onDelete,
+  onRetryTranslate,
   foreignText,
   chineseText,
   showAdminLayout = false,
@@ -21,6 +48,7 @@ const ChatMessageBubble = ({
   const [imgError, setImgError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const isPending = msg.status === 'pending';
   const isFailed = msg.status === 'failed';
 
@@ -39,10 +67,19 @@ const ChatMessageBubble = ({
     setImgError(true);
   };
 
+  const handleDelete = async () => {
+    if (!onDelete || deleting || !msg.message_id) return;
+    setDeleting(true);
+    try {
+      await onDelete(msg);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const roundOwn = 'rounded-ee-sm rtl:rounded-es-sm';
   const roundOther = 'rounded-es-sm rtl:rounded-ee-sm';
   const round = isOwn ? roundOwn : roundOther;
-  // Swapped palettes (admin ↔ visitor): colorful was "staff/own", gray was "other"
   const styleGray = `bg-white/10 text-gray-100 ${round}`;
   const styleGreen = `bg-gradient-to-r from-green-600 to-emerald-600 text-white ${round}`;
   const styleBluePurple = `bg-gradient-to-r from-blue-500 to-purple-600 text-white ${round}`;
@@ -50,11 +87,9 @@ const ChatMessageBubble = ({
   let cls;
   let timeMuted;
   if (showAdminLayout) {
-    // Admin room: staff → gray; visitor → green (swapped)
     cls = isOwn ? styleGray : styleGreen;
     timeMuted = isOwn ? 'text-gray-500' : 'text-white/60';
   } else {
-    // Visitor widget: visitor → gray; staff → blue-purple (swapped)
     cls = isOwn ? styleGray : styleBluePurple;
     timeMuted = isOwn ? 'text-gray-500' : 'text-white/60';
   }
@@ -62,13 +97,33 @@ const ChatMessageBubble = ({
   const topText = showAdminLayout ? foreignText ?? msg.content : msg.content;
   const bottomText = showAdminLayout ? chineseText : null;
   const timeLocale = showAdminLayout ? 'zh-CN' : locale;
+  const translateFailed =
+    showAdminLayout &&
+    typeof bottomText === 'string' &&
+    (bottomText.includes('翻译失败') || bottomText.includes('translation failed'));
 
   return (
     <>
-      <div className="flex w-full">
+      <div className="flex w-full group/bubble">
         <div
           className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm relative ${cls} ${isOwn ? 'ms-auto' : 'me-auto'} ${isPending ? 'opacity-70' : ''} ${isFailed ? 'border border-red-500/50' : ''}`}
         >
+          {showAdminLayout && onDelete && msg.message_id ? (
+            <button
+              type="button"
+              title="静默删除"
+              disabled={deleting}
+              onClick={handleDelete}
+              className="absolute -top-2 -end-2 opacity-0 group-hover/bubble:opacity-100 focus:opacity-100 transition-opacity w-6 h-6 rounded-full bg-black/70 border border-white/20 text-gray-300 hover:text-red-400 hover:border-red-400/50 flex items-center justify-center disabled:opacity-40"
+            >
+              {deleting ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Trash2 className="w-3 h-3" />
+              )}
+            </button>
+          ) : null}
+
           {msg.type === 'image' && imageSrc && (
             <div className="mb-1">
               {!imgLoaded && !imgError && (
@@ -110,18 +165,30 @@ const ChatMessageBubble = ({
           )}
 
           {topText ? (
-            <p className="break-words whitespace-pre-wrap" dir="auto">
-              {topText}
-            </p>
+            <LinkifiedText
+              text={topText}
+              className="break-words whitespace-pre-wrap"
+              dir="auto"
+            />
           ) : null}
 
           {bottomText ? (
-            <p
-              className="break-words whitespace-pre-wrap mt-1.5 text-[12px] opacity-90 border-t border-white/20 pt-1.5"
-              dir="auto"
-            >
-              {bottomText}
-            </p>
+            <div className="mt-1.5 border-t border-white/20 pt-1.5">
+              <LinkifiedText
+                text={bottomText}
+                className="break-words whitespace-pre-wrap text-[12px] opacity-90"
+                dir="auto"
+              />
+              {translateFailed && onRetryTranslate ? (
+                <button
+                  type="button"
+                  onClick={() => onRetryTranslate(msg)}
+                  className="mt-1 text-[11px] underline opacity-90 hover:opacity-100"
+                >
+                  点击重试翻译
+                </button>
+              ) : null}
+            </div>
           ) : null}
 
           <div className={`flex items-center gap-1 mt-1 ${timeMuted}`}>

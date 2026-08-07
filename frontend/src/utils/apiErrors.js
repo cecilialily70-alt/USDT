@@ -35,6 +35,7 @@ const SUCCESS_TO_TOAST_KEY = {
   WHITELIST_REMOVED: 'ipRemoved',
   BLACKLIST_ADDED: 'ipBlocked',
   BLACKLIST_REMOVED: 'ipUnblocked',
+  MESSAGE_DELETED: 'sessionDeleted',
   SESSION_DELETED: 'sessionDeleted',
   NOTE_SAVED: 'noteSaved',
 };

@@ -105,6 +105,8 @@ const AdminChat = ({
   const translatingIdsRef = useRef(new Set());
   /** Bumps on gender/provider change so in-flight auto-translates are ignored. */
   const translateGenRef = useRef(0);
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  selectedSessionIdRef.current = selectedSessionId;
   const pasteLockRef = useRef(false);
   const [presenceTick, setPresenceTick] = useState(0);
   const [noteDraft, setNoteDraft] = useState('');
@@ -229,6 +231,9 @@ const AdminChat = ({
       setDraftZh('');
       setSendHe('');
       setPendingOriginal('');
+      translateGenRef.current += 1;
+      setZhCache({});
+      translatingIdsRef.current.clear();
       fetchMessages(selectedSessionId, null, true);
       const msgPoll = setInterval(
         () => fetchMessages(selectedSessionId, lastSinceRef.current),
@@ -277,9 +282,11 @@ const AdminChat = ({
     const token = getToken();
     const gender = selectedSession?.visitor_gender === 'female' ? 'female' : 'male';
     const gen = translateGenRef.current;
+    const sessionAtStart = selectedSessionId;
     messages.forEach((msg) => {
       if (msg.type === 'image') return;
-      const mid = msg.message_id || msg.client_message_id;
+      // Wait for server id to avoid client_message_id → message_id cache orphaning
+      const mid = msg.message_id;
       if (!mid) return;
       if (zhCacheRef.current[mid] !== undefined) return;
 
@@ -293,26 +300,39 @@ const AdminChat = ({
       if (!text) return;
       if (translatingIdsRef.current.has(mid)) return;
       translatingIdsRef.current.add(mid);
+      const softTimer = setTimeout(() => {
+        if (translatingIdsRef.current.has(mid) && zhCacheRef.current[mid] === undefined) {
+          translatingIdsRef.current.delete(mid);
+          if (gen === translateGenRef.current) {
+            setZhCache((prev) =>
+              prev[mid] === undefined ? { ...prev, [mid]: '' } : prev
+            );
+          }
+        }
+      }, 95000);
       axios
         .post(
           `${API}/admin/translate`,
           { text, target: 'zh', provider, gender },
-          { headers: { Authorization: `Bearer ${token}` }, timeout: 60000 }
+          { headers: { Authorization: `Bearer ${token}` }, timeout: 90000 }
         )
         .then((res) => {
           if (gen !== translateGenRef.current) return;
+          if (sessionAtStart !== selectedSessionIdRef.current) return;
           setZhCache((prev) => ({ ...prev, [mid]: res.data?.text || text }));
         })
         .catch((err) => {
           if (gen !== translateGenRef.current) return;
+          if (sessionAtStart !== selectedSessionIdRef.current) return;
           console.warn('translate zh failed', err?.response?.status, err?.message);
           setZhCache((prev) => ({ ...prev, [mid]: '' }));
         })
         .finally(() => {
+          clearTimeout(softTimer);
           translatingIdsRef.current.delete(mid);
         });
     });
-  }, [messages, view, provider, selectedSession?.visitor_gender]);
+  }, [messages, view, provider, selectedSession?.visitor_gender, selectedSessionId]);
 
   const handleSelectSession = (session) => {
     // Single click: select only (stay on contacts)
@@ -412,6 +432,40 @@ const AdminChat = ({
     }
   };
 
+  const handleDeleteMessage = async (msg) => {
+    const mid = msg?.message_id;
+    if (!selectedSessionId || !mid) return;
+    if (!window.confirm(ac.deleteMessageConfirm)) return;
+    try {
+      await axios.delete(
+        `${API}/admin/chat/sessions/${selectedSessionId}/messages/${encodeURIComponent(mid)}`,
+        { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 15000 }
+      );
+      setMessages((prev) => prev.filter((m) => m.message_id !== mid));
+      setZhCache((prev) => {
+        if (prev[mid] === undefined) return prev;
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
+      toast.success(ac.deleteMessageDone);
+      fetchSessions();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, ac.deleteMessageFailed, t));
+    }
+  };
+
+  const handleRetryTranslate = (msg) => {
+    const mid = msg?.message_id;
+    if (!mid) return;
+    translatingIdsRef.current.delete(mid);
+    setZhCache((prev) => {
+      const next = { ...prev };
+      delete next[mid];
+      return next;
+    });
+  };
+
   const sessionGender = (session) =>
     session?.visitor_gender === 'female' ? 'female' : 'male';
 
@@ -486,7 +540,7 @@ const AdminChat = ({
       const res = await axios.post(
         `${API}/admin/translate`,
         { text, target: 'he', provider, gender },
-        { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 60000 }
+        { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 90000 }
       );
       const hebrew = (res.data?.text || text).trim();
       setPendingOriginal(text);
@@ -962,8 +1016,9 @@ const AdminChat = ({
           let chinese = null;
           if (msg.type !== 'image' && mid) {
             if (msg.content_original) chinese = msg.content_original;
-            else if (zhCache[mid] === '') chinese = ac.translationFailedHint;
-            else if (zhCache[mid]) chinese = zhCache[mid];
+            else if (!msg.message_id) chinese = ac.translatingHint;
+            else if (zhCache[msg.message_id] === '') chinese = ac.translationFailedHint;
+            else if (zhCache[msg.message_id]) chinese = zhCache[msg.message_id];
             else chinese = ac.translatingHint;
             // 与外文完全相同时不重复显示
             if (chinese && foreign && chinese.trim() === foreign.trim()) {
@@ -979,6 +1034,8 @@ const AdminChat = ({
               foreignText={foreign}
               chineseText={chinese}
               onRetry={msg.status === 'failed' ? () => handleRetryMessage(msg) : undefined}
+              onDelete={handleDeleteMessage}
+              onRetryTranslate={handleRetryTranslate}
             />
           );
         })}

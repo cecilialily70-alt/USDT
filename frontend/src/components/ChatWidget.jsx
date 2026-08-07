@@ -10,6 +10,7 @@ import {
   getPendingMessages,
   savePendingMessage,
   removePendingMessage,
+  migratePendingMessages,
   validateIsraeliPhone,
   formatIsraeliPhoneInput,
   createClientMessageId,
@@ -30,9 +31,10 @@ const NAME_KEY = 'chat_visitor_name';
 const PHONE_KEY = 'chat_visitor_phone';
 const POLL_INTERVAL_OPEN = 3000;
 const PING_INTERVAL = 5000;
-const PING_INTERVAL_HIDDEN = 15000;
+const PING_INTERVAL_HIDDEN = 10000;
 const BG_SYNC_INTERVAL = 10000;
 const FULL_SYNC_EVERY = 10;
+const SEND_TIMEOUT_MS = 30000;
 
 const getOrCreateSessionId = () => {
   let id = localStorage.getItem(SESSION_KEY);
@@ -77,8 +79,29 @@ const ChatWidget = () => {
   const adoptSessionId = useCallback((sid) => {
     const next = (sid || '').trim();
     if (!next || next === sessionId.current) return;
+    const prev = sessionId.current;
+    migratePendingMessages(prev, next);
     sessionId.current = next;
     localStorage.setItem(SESSION_KEY, next);
+  }, []);
+
+  const markMessageFailed = useCallback((clientMessageId, optimistic) => {
+    if (!clientMessageId) return;
+    if (optimistic) {
+      savePendingMessage(sessionId.current, { ...optimistic, status: 'failed' });
+    } else {
+      const pending = getPendingMessages(sessionId.current).find(
+        (m) => m.client_message_id === clientMessageId
+      );
+      if (pending) {
+        savePendingMessage(sessionId.current, { ...pending, status: 'failed' });
+      }
+    }
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.client_message_id === clientMessageId ? { ...m, status: 'failed' } : m
+      )
+    );
   }, []);
 
   const notifyNewAdminMessages = useCallback((serverMsgs) => {
@@ -140,6 +163,7 @@ const ChatWidget = () => {
       const res = await axios.get(`${API}/chat/messages`, {
         params,
         headers: visitorChatHeaders(visitorPhone),
+        timeout: SEND_TIMEOUT_MS,
       });
       clearChatBlocked();
       const incoming = res.data.messages || [];
@@ -154,12 +178,27 @@ const ChatWidget = () => {
     }
   }, [needsRegister, visitorPhone, applyMessages, handleChatApiError, clearChatBlocked, notifyNewAdminMessages]);
 
+  const initSession = useCallback(async (name, phone) => {
+    const res = await axios.post(
+      `${API}/chat/session`,
+      {
+        session_id: sessionId.current,
+        visitor_name: name,
+        visitor_phone: phone,
+      },
+      { timeout: SEND_TIMEOUT_MS }
+    );
+    adoptSessionId(res.data?.session_id);
+    return res.data;
+  }, [adoptSessionId]);
+
   const syncFromServer = useCallback(async () => {
     if (needsRegister || chatBlockedRef.current) return;
     try {
       const res = await axios.get(`${API}/chat/sync`, {
         params: visitorChatParams(sessionId.current, visitorPhone),
         headers: visitorChatHeaders(visitorPhone),
+        timeout: SEND_TIMEOUT_MS,
       });
       clearChatBlocked();
       const serverMsgs = res.data.messages || [];
@@ -172,11 +211,38 @@ const ChatWidget = () => {
         notifyNewAdminMessages(serverMsgs);
       }
     } catch (err) {
-      if (!handleChatApiError(err)) {
-        // keep local state on network error
+      if (handleChatApiError(err)) return;
+      if (
+        (err?.response?.status === 404 ||
+          err?.response?.data?.detail === 'SESSION_NOT_FOUND' ||
+          err?.response?.data?.detail === 'SESSION_ACCESS_DENIED') &&
+        visitorName &&
+        visitorPhone
+      ) {
+        try {
+          await initSession(visitorName, visitorPhone);
+          const res = await axios.get(`${API}/chat/sync`, {
+            params: visitorChatParams(sessionId.current, visitorPhone),
+            headers: visitorChatHeaders(visitorPhone),
+            timeout: SEND_TIMEOUT_MS,
+          });
+          applyMessages(res.data.messages || [], false);
+        } catch (e) {
+          handleChatApiError(e);
+        }
       }
     }
-  }, [needsRegister, isOpen, applyMessages, visitorPhone, handleChatApiError, clearChatBlocked, notifyNewAdminMessages]);
+  }, [
+    needsRegister,
+    isOpen,
+    applyMessages,
+    visitorPhone,
+    visitorName,
+    handleChatApiError,
+    clearChatBlocked,
+    notifyNewAdminMessages,
+    initSession,
+  ]);
 
   useEffect(() => {
     if (needsRegister || notificationsReadyRef.current) return undefined;
@@ -185,15 +251,29 @@ const ChatWidget = () => {
     return undefined;
   }, [needsRegister]);
 
-  const initSession = useCallback(async (name, phone) => {
-    const res = await axios.post(`${API}/chat/session`, {
-      session_id: sessionId.current,
-      visitor_name: name,
-      visitor_phone: phone,
-    });
-    adoptSessionId(res.data?.session_id);
-    return res.data;
-  }, [adoptSessionId]);
+  const recoverSessionIfNeeded = useCallback(
+    async (err) => {
+      const detail = err?.response?.data?.detail;
+      const status = err?.response?.status;
+      if (
+        status === 404 ||
+        detail === 'SESSION_NOT_FOUND' ||
+        detail === 'SESSION_ACCESS_DENIED'
+      ) {
+        if (!visitorName || !visitorPhone) return false;
+        try {
+          await initSession(visitorName, visitorPhone);
+          clearChatBlocked();
+          return true;
+        } catch (e) {
+          handleChatApiError(e);
+          return false;
+        }
+      }
+      return false;
+    },
+    [visitorName, visitorPhone, initSession, clearChatBlocked, handleChatApiError]
+  );
 
   const retryPendingMessages = useCallback(async () => {
     const pending = getPendingMessages(sessionId.current);
@@ -213,20 +293,62 @@ const ChatWidget = () => {
           form.append('client_message_id', msg.client_message_id);
           res = await axios.post(`${API}/chat/upload`, form, {
             headers: { 'Content-Type': 'multipart/form-data', ...visitorChatHeaders(visitorPhone) },
+            timeout: 120000,
           });
         } else {
-          res = await axios.post(`${API}/chat/messages`, {
-            session_id: sessionId.current,
-            content: msg.content,
-            visitor_name: visitorName,
-            visitor_phone: visitorPhone,
-            client_message_id: msg.client_message_id,
-          }, { headers: visitorChatHeaders(visitorPhone) });
+          res = await axios.post(
+            `${API}/chat/messages`,
+            {
+              session_id: sessionId.current,
+              content: msg.content,
+              visitor_name: visitorName,
+              visitor_phone: visitorPhone,
+              client_message_id: msg.client_message_id,
+            },
+            { headers: visitorChatHeaders(visitorPhone), timeout: SEND_TIMEOUT_MS }
+          );
         }
+        adoptSessionId(res.data?.session_id);
         removePendingMessage(sessionId.current, msg.client_message_id);
         pendingFilesRef.current.delete(msg.client_message_id);
-        setMessages((prev) => mergeMessages(prev.filter((m) => m.client_message_id !== msg.client_message_id), [res.data.message]));
-      } catch {
+        setMessages((prev) =>
+          mergeMessages(
+            prev.filter((m) => m.client_message_id !== msg.client_message_id),
+            [res.data.message]
+          )
+        );
+      } catch (err) {
+        if (await recoverSessionIfNeeded(err)) {
+          try {
+            if (msg.type === 'image') continue;
+            const res = await axios.post(
+              `${API}/chat/messages`,
+              {
+                session_id: sessionId.current,
+                content: msg.content,
+                visitor_name: visitorName,
+                visitor_phone: visitorPhone,
+                client_message_id: msg.client_message_id,
+              },
+              { headers: visitorChatHeaders(visitorPhone), timeout: SEND_TIMEOUT_MS }
+            );
+            adoptSessionId(res.data?.session_id);
+            removePendingMessage(sessionId.current, msg.client_message_id);
+            setMessages((prev) =>
+              mergeMessages(
+                prev.filter((m) => m.client_message_id !== msg.client_message_id),
+                [res.data.message]
+              )
+            );
+            continue;
+          } catch {
+            // fall through to failed
+          }
+        }
+        if (handleChatApiError(err)) {
+          markMessageFailed(msg.client_message_id, msg);
+          continue;
+        }
         savePendingMessage(sessionId.current, { ...msg, status: 'failed' });
         setMessages((prev) =>
           prev.map((m) =>
@@ -235,7 +357,14 @@ const ChatWidget = () => {
         );
       }
     }
-  }, [visitorName, visitorPhone]);
+  }, [
+    visitorName,
+    visitorPhone,
+    adoptSessionId,
+    recoverSessionIfNeeded,
+    handleChatApiError,
+    markMessageFailed,
+  ]);
 
   useEffect(() => {
     const handleOpenChat = (event) => {
@@ -279,7 +408,7 @@ const ChatWidget = () => {
   useEffect(() => {
     const handleResume = () => {
       if (!needsRegister) {
-        syncFromServer();
+        syncFromServer().then(() => retryPendingMessages());
       }
     };
 
@@ -296,7 +425,7 @@ const ChatWidget = () => {
       window.removeEventListener('focus', handleResume);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [needsRegister, syncFromServer]);
+  }, [needsRegister, syncFromServer, retryPendingMessages]);
 
   useEffect(() => {
     if (needsRegister) return undefined;
@@ -480,14 +609,30 @@ const ChatWidget = () => {
     savePendingMessage(sessionId.current, optimistic);
     setMessages((prev) => mergeMessages(prev, [optimistic]));
 
+    const postOnce = () =>
+      axios.post(
+        `${API}/chat/messages`,
+        {
+          session_id: sessionId.current,
+          content,
+          visitor_name: visitorName,
+          visitor_phone: visitorPhone,
+          client_message_id: clientMessageId,
+        },
+        { headers: visitorChatHeaders(visitorPhone), timeout: SEND_TIMEOUT_MS }
+      );
+
     try {
-      const res = await axios.post(`${API}/chat/messages`, {
-        session_id: sessionId.current,
-        content,
-        visitor_name: visitorName,
-        visitor_phone: visitorPhone,
-        client_message_id: clientMessageId,
-      }, { headers: visitorChatHeaders(visitorPhone) });
+      let res;
+      try {
+        res = await postOnce();
+      } catch (err) {
+        if (await recoverSessionIfNeeded(err)) {
+          res = await postOnce();
+        } else {
+          throw err;
+        }
+      }
       adoptSessionId(res.data?.session_id);
       removePendingMessage(sessionId.current, clientMessageId);
       const serverMsg = {
@@ -499,14 +644,8 @@ const ChatWidget = () => {
         lastSinceRef.current = serverMsg.created_at;
       }
     } catch (err) {
-      if (!handleChatApiError(err)) {
-        savePendingMessage(sessionId.current, { ...optimistic, status: 'failed' });
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.client_message_id === clientMessageId ? { ...m, status: 'failed' } : m
-          )
-        );
-      }
+      markMessageFailed(clientMessageId, optimistic);
+      handleChatApiError(err);
       throw new Error('send failed');
     }
   };

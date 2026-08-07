@@ -2225,6 +2225,18 @@ async def upload_admin_image(
     )
     return {"message": message}
 
+@app.delete("/api/admin/chat/sessions/{session_id}/messages/{message_id}")
+async def delete_chat_message(
+    session_id: str,
+    message_id: str,
+    token_data: dict = Depends(verify_token),
+):
+    """Silently delete one message (visitor is not notified)."""
+    deleted = await delete_message_completely(session_id, message_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="MESSAGE_NOT_FOUND")
+    return {"message": "MESSAGE_DELETED", "message_id": message_id}
+
 @app.delete("/api/admin/chat/sessions/{session_id}")
 async def delete_chat_session(session_id: str, token_data: dict = Depends(verify_token)):
     deleted = await delete_session_completely(session_id)

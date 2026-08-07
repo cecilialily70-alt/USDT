@@ -70,6 +70,61 @@ export const removePendingMessage = (sessionId, clientMessageId) => {
   localStorage.setItem(PENDING_KEY, JSON.stringify(all));
 };
 
+/** Move pending queue when server merges session_id (same phone → canonical). */
+export const migratePendingMessages = (fromSessionId, toSessionId) => {
+  if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(PENDING_KEY) || '{}');
+    const fromList = all[fromSessionId] || [];
+    if (!fromList.length) return;
+    const toList = all[toSessionId] || [];
+    const seen = new Set(toList.map((m) => m.client_message_id));
+    for (const msg of fromList) {
+      if (!msg?.client_message_id || seen.has(msg.client_message_id)) continue;
+      toList.push({ ...msg, session_id: toSessionId });
+      seen.add(msg.client_message_id);
+    }
+    all[toSessionId] = toList;
+    delete all[fromSessionId];
+    localStorage.setItem(PENDING_KEY, JSON.stringify(all));
+  } catch {
+    // ignore corrupt storage
+  }
+};
+
+/**
+ * Split text into plain / URL parts for clickable links.
+ * Supports http(s):// and www. prefixes.
+ */
+export const linkifyTextParts = (text) => {
+  const raw = text == null ? '' : String(text);
+  if (!raw) return [];
+  const re = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
+  const parts = [];
+  let last = 0;
+  let match;
+  while ((match = re.exec(raw)) !== null) {
+    if (match.index > last) {
+      parts.push({ type: 'text', value: raw.slice(last, match.index) });
+    }
+    let url = match[0];
+    // Trim common trailing punctuation from URL
+    let trailing = '';
+    while (/[),.;:!?，。！？、》」』】)]$/.test(url)) {
+      trailing = url.slice(-1) + trailing;
+      url = url.slice(0, -1);
+    }
+    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    parts.push({ type: 'link', value: url, href });
+    if (trailing) parts.push({ type: 'text', value: trailing });
+    last = match.index + match[0].length;
+  }
+  if (last < raw.length) {
+    parts.push({ type: 'text', value: raw.slice(last) });
+  }
+  return parts.length ? parts : [{ type: 'text', value: raw }];
+};
+
 export const validateIsraeliPhone = (phone) => {
   let cleaned = phone.replace(/[\s\-().]/g, '').trim();
   if (cleaned.startsWith('+972')) cleaned = '0' + cleaned.slice(4);
@@ -93,8 +148,8 @@ export const formatIsraeliPhoneInput = (raw) => {
 
 export const LOCALE_MAP = { he: 'he-IL', en: 'en-IL', ar: 'ar-IL' };
 
-/** Visitor pings every 5s; allow several missed heartbeats + poll delay. */
-export const ONLINE_THRESHOLD_SEC = 25;
+/** Visitor pings every 5s (10s when tab hidden); allow several missed heartbeats. */
+export const ONLINE_THRESHOLD_SEC = 45;
 
 export const parseUtcIso = (iso) => {
   if (!iso) return null;
