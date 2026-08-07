@@ -352,11 +352,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="INVALID_TOKEN")
 
-class PublicConfig(BaseModel):
-    buyRate: float = 4.4
-    sellRate: float = 3.3
-
-class AdminConfigUpdate(PublicConfig):
+class AdminConfigUpdate(BaseModel):
     adminPath: str = DEFAULT_ADMIN_PATH
     adminPassword: str = Field(default="", description="Leave empty to keep current password")
 
@@ -1145,18 +1141,13 @@ async def health_check():
 
 @app.get("/api/config")
 async def get_public_config():
-    config = await get_config_doc()
-    return {
-        "buyRate": config.get("buyRate", 4.4),
-        "sellRate": config.get("sellRate", 3.3),
-    }
+    # Used as a lightweight public probe (also triggers region middleware).
+    return {"ok": True}
 
 @app.get("/api/admin/config")
 async def get_admin_config(token_data: dict = Depends(verify_token)):
     config = await get_config_doc()
     return {
-        "buyRate": config.get("buyRate", 4.4),
-        "sellRate": config.get("sellRate", 3.3),
         "adminPath": resolve_admin_path(config),
         "adminPassword": "",
         "passwordSet": password_is_configured(config),
@@ -1187,8 +1178,13 @@ async def update_admin_config(config: AdminConfigUpdate, token_data: dict = Depe
         else:
             raise HTTPException(status_code=400, detail="PASSWORD_TOO_SHORT")
 
+    # Only update path + password; drop legacy public rate fields if still in DB
     config_data["adminPath"] = new_path
-    await config_collection.update_one({}, {"$set": config_data}, upsert=True)
+    await config_collection.update_one(
+        {},
+        {"$set": config_data, "$unset": {"buyRate": "", "sellRate": ""}},
+        upsert=True,
+    )
     return {"message": "CONFIG_SAVED"}
 
 # ==========================================

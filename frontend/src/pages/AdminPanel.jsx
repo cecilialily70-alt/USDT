@@ -45,8 +45,6 @@ const AdminPanel = () => {
   const [chatUnread, setChatUnread] = useState(0);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [config, setConfig] = useState({
-    buyRate: 4.4,
-    sellRate: 3.3,
     adminPath: '',
     adminPassword: '',
     passwordSet: false,
@@ -168,8 +166,6 @@ const AdminPanel = () => {
     const token = localStorage.getItem('admin_token');
     try {
       const payload = {
-        buyRate: Number.isFinite(Number(config.buyRate)) ? Number(config.buyRate) : undefined,
-        sellRate: Number.isFinite(Number(config.sellRate)) ? Number(config.sellRate) : undefined,
         adminPath: config.adminPath,
         adminPassword: (config.adminPassword || '').trim(),
       };
@@ -246,15 +242,6 @@ const AdminPanel = () => {
 
   const handleInputChange = (field, value) => {
     setConfig((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleRateChange = (field, raw) => {
-    if (raw === '') {
-      handleInputChange(field, '');
-      return;
-    }
-    const n = parseFloat(raw);
-    if (Number.isFinite(n)) handleInputChange(field, n);
   };
 
   const handleLogout = () => {
@@ -409,7 +396,7 @@ const AdminPanel = () => {
           className="flex-1 min-h-0 mt-0 overflow-y-auto focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=inactive]:hidden"
         >
           <div className="max-w-4xl mx-auto px-4 py-4 sm:py-6 pb-10 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <Card className="glass-card p-5 md:p-6 border-red-500/20 shadow-xl shadow-red-500/10">
                 <h2 className="text-lg font-bold text-white mb-4 flex items-center border-b border-white/10 pb-3">
                   <KeyRound className="w-5 h-5 me-2 text-red-400" /> {s.securityTitle}
@@ -456,50 +443,7 @@ const AdminPanel = () => {
                 </div>
               </Card>
 
-              <Card className="glass-card p-5 md:p-6 border-blue-500/20 shadow-xl shadow-blue-500/10">
-                <h2 className="text-lg font-bold text-white mb-4 flex items-center border-b border-white/10 pb-3">
-                  {s.ratesTitle}
-                </h2>
-                <div className="space-y-5">
-                  <div>
-                    <Label
-                      htmlFor="buyRate"
-                      className="text-gray-200 text-sm font-semibold mb-2 flex items-center gap-2"
-                    >
-                      <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                      {s.buyRateLabel}
-                    </Label>
-                    <Input
-                      id="buyRate"
-                      type="number"
-                      step="0.1"
-                      value={config.buyRate}
-                      onChange={(e) => handleRateChange('buyRate', e.target.value)}
-                      className="bg-[#0a0e1a]/80 border-green-500/30 focus:border-green-500 text-white h-11"
-                    />
-                  </div>
-
-                  <div>
-                    <Label
-                      htmlFor="sellRate"
-                      className="text-gray-200 text-sm font-semibold mb-2 flex items-center gap-2"
-                    >
-                      <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                      {s.sellRateLabel}
-                    </Label>
-                    <Input
-                      id="sellRate"
-                      type="number"
-                      step="0.1"
-                      value={config.sellRate}
-                      onChange={(e) => handleRateChange('sellRate', e.target.value)}
-                      className="bg-[#0a0e1a]/80 border-blue-500/30 focus:border-blue-500 text-white h-11"
-                    />
-                  </div>
-                </div>
-              </Card>
-
-              <Card className="glass-card p-5 md:p-6 border-yellow-500/20 shadow-xl shadow-yellow-500/10 md:col-span-2">
+              <Card className="glass-card p-5 md:p-6 border-yellow-500/20 shadow-xl shadow-yellow-500/10">
                 <h2 className="text-lg font-bold text-white mb-4 flex items-center border-b border-white/10 pb-3">
                   <Shield className="w-5 h-5 me-2 text-yellow-400" /> {s.whitelistTitle}
                 </h2>

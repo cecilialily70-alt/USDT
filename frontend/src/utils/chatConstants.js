@@ -10,8 +10,6 @@ export const SUPPORTED_IMAGE_MIME = new Set([
   'image/bmp',
 ]);
 
-export const UNSUPPORTED_IMAGE_CODE = 'IMAGE_TYPE_NOT_SUPPORTED';
-
 const IMAGE_EXT_TO_MIME = {
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',

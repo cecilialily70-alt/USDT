@@ -40,7 +40,7 @@ const TradeModal = ({ isOpen, onClose, tradeType = 'buy' }) => {
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="!top-3 !translate-y-0 sm:!top-[50%] sm:!-translate-y-1/2 w-[calc(100%-1.5rem)] sm:max-w-md bg-gradient-to-br from-[#0F1419]/98 to-[#06080F]/98 border border-white/10 rounded-2xl backdrop-blur-xl p-4 sm:p-6 gap-3 max-h-[70dvh] sm:max-h-none overflow-y-auto">
         <DialogHeader className="space-y-1 text-start">
           <DialogTitle className="text-xl sm:text-2xl font-bold">

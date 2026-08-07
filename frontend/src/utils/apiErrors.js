@@ -35,7 +35,6 @@ const SUCCESS_TO_TOAST_KEY = {
   WHITELIST_REMOVED: 'ipRemoved',
   BLACKLIST_ADDED: 'ipBlocked',
   BLACKLIST_REMOVED: 'ipUnblocked',
-  MESSAGE_DELETED: 'sessionDeleted',
   SESSION_DELETED: 'sessionDeleted',
   NOTE_SAVED: 'noteSaved',
 };
@@ -97,8 +96,9 @@ export const resolveApiError = (detail, t, fallback) => {
 
 export const resolveApiSuccess = (message, t, fallback = '') => {
   if (!message || typeof message !== 'string') return fallback;
+  // Prefer explicit fallback (adminZh) so admin UI stays Chinese regardless of visitor locale.
+  if (fallback) return fallback;
   const toastKey = SUCCESS_TO_TOAST_KEY[message.trim()];
   if (toastKey && t?.admin?.toast?.[toastKey]) return t.admin.toast[toastKey];
-  if (toastKey && t?.admin?.chat?.[toastKey]) return t.admin.chat[toastKey];
-  return fallback || message;
+  return message;
 };

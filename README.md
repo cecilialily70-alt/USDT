@@ -4,26 +4,31 @@ Compliance-first USDT↔ILS exchange website for Israeli users (default language
 
 ## Project layout
 
-| Path | Role |
-|------|------|
-| `frontend/` | React (CRA + CRACO), i18n `en` / `he` / `ar` |
-| `backend/server.py` | FastAPI + MongoDB (Vercel serverless) |
-| Desktop app | `../桌面程序/`（本地运行，不上传 Vercel） |
+
+| Path                | Role                                         |
+| ------------------- | -------------------------------------------- |
+| `frontend/`         | React (CRA + CRACO), i18n `en` / `he` / `ar` |
+| `backend/server.py` | FastAPI + MongoDB (Vercel serverless)        |
+| Desktop app         | `../桌面程序/`（本地运行，不上传 Vercel）                  |
+
 
 ## Environment variables
 
 Set these in Vercel (Production / Preview). See also `部署环境变量说明.txt`:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `MONGO_URL` | Yes | MongoDB Atlas connection string (`MONGODB_URI` also accepted) |
-| `JWT_SECRET` | Yes | Long random secret for admin JWT. **Do not** derive from `MONGO_URL` |
-| `ADMIN_PATH` | Recommended | Fallback admin URL path if not set in MongoDB config |
-| `CORS_ORIGINS` | Optional | Extra allowed origins, comma-separated (e.g. `https://new-domain.com`) |
-| `TG_BOT` / `TG_CHAT_ID` | Optional | Telegram ops alerts (Chinese text OK — ops only) |
-| `VERCEL_ENV` / `VERCEL_URL` | Auto | Set by Vercel |
 
-See `backend/.env.example`. `backend/.env` is gitignored and must never be committed.
+| Variable                    | Required    | Description                                                            |
+| --------------------------- | ----------- | ---------------------------------------------------------------------- |
+| `MONGO_URL`                 | Yes         | MongoDB Atlas connection string (`MONGODB_URI` also accepted)          |
+| `JWT_SECRET`                | Yes         | Long random secret for admin JWT. **Do not** derive from `MONGO_URL`   |
+| `ADMIN_PATH`                | Recommended | Fallback admin URL path if not set in MongoDB config                   |
+| `CORS_ORIGINS`              | Optional    | Extra allowed origins, comma-separated (e.g. `https://new-domain.com`) |
+| `TG_BOT` / `TG_CHAT_ID`     | Optional    | Telegram ops alerts (Chinese text OK — ops only)                       |
+| `VERCEL_ENV` / `VERCEL_URL` | Auto        | Set by Vercel                                                          |
+
+
+See `backend/.env.example`. `backend/.env` is gitignored and must never be committed.  
+`JWT_SECRET=` [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }) -as [byte[]])
 
 ## Admin entry
 
@@ -71,3 +76,4 @@ Python Lambda size limit is set via `maxLambdaSize` on the Python build. For `ma
 ## Legal pages
 
 - `/terms`, `/privacy` — real routes (Footer Contact opens live chat)
+

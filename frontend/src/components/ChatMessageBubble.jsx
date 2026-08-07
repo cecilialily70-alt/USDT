@@ -3,6 +3,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { formatChatTime, resolveChatImageUrl, linkifyTextParts } from '../utils/chatHelpers';
 import { Loader2, AlertCircle, ImageIcon, Trash2 } from 'lucide-react';
 import ChatImageViewer from './ChatImageViewer';
+import { adminZh } from '../i18n/adminZh';
 
 const LinkifiedText = ({ text, className, dir }) => {
   const parts = useMemo(() => linkifyTextParts(text), [text]);
@@ -41,6 +42,7 @@ const ChatMessageBubble = ({
   onRetryTranslate,
   foreignText,
   chineseText,
+  translateFailed = false,
   showAdminLayout = false,
 }) => {
   const { t, locale } = useLanguage();
@@ -97,10 +99,6 @@ const ChatMessageBubble = ({
   const topText = showAdminLayout ? foreignText ?? msg.content : msg.content;
   const bottomText = showAdminLayout ? chineseText : null;
   const timeLocale = showAdminLayout ? 'zh-CN' : locale;
-  const translateFailed =
-    showAdminLayout &&
-    typeof bottomText === 'string' &&
-    (bottomText.includes('翻译失败') || bottomText.includes('translation failed'));
 
   return (
     <>
@@ -111,7 +109,7 @@ const ChatMessageBubble = ({
           {showAdminLayout && onDelete && msg.message_id ? (
             <button
               type="button"
-              title="静默删除"
+              title={adminZh.chat.deleteMessage}
               disabled={deleting}
               onClick={handleDelete}
               className="absolute -top-2 -end-2 opacity-0 group-hover/bubble:opacity-100 focus:opacity-100 transition-opacity w-6 h-6 rounded-full bg-black/70 border border-white/20 text-gray-300 hover:text-red-400 hover:border-red-400/50 flex items-center justify-center disabled:opacity-40"

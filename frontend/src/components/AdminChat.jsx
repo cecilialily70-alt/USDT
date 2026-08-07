@@ -108,6 +108,7 @@ const AdminChat = ({
   const selectedSessionIdRef = useRef(selectedSessionId);
   selectedSessionIdRef.current = selectedSessionId;
   const pasteLockRef = useRef(false);
+  const pendingFilesRef = useRef(new Map());
   const [presenceTick, setPresenceTick] = useState(0);
   const [noteDraft, setNoteDraft] = useState('');
   const [noteEditingId, setNoteEditingId] = useState(null);
@@ -199,7 +200,8 @@ const AdminChat = ({
             if (s.session_id !== sessionId) return s;
             const next = { ...s, unread_admin: 0 };
             if (latestVisitor?.created_at) {
-              next.last_seen_at = latestVisitor.created_at;
+              // Do not overwrite last_seen_at — presence comes from visitor ping,
+              // and message timestamps can be older than the heartbeat.
               next.last_message_at = latestVisitor.created_at;
             }
             return next;
@@ -227,6 +229,7 @@ const AdminChat = ({
     if (view === 'chat' && selectedSessionId) {
       lastSinceRef.current = null;
       forceScrollToBottomRef.current = true;
+      pendingFilesRef.current.clear();
       setMessages([]);
       setDraftZh('');
       setSendHe('');
@@ -300,16 +303,6 @@ const AdminChat = ({
       if (!text) return;
       if (translatingIdsRef.current.has(mid)) return;
       translatingIdsRef.current.add(mid);
-      const softTimer = setTimeout(() => {
-        if (translatingIdsRef.current.has(mid) && zhCacheRef.current[mid] === undefined) {
-          translatingIdsRef.current.delete(mid);
-          if (gen === translateGenRef.current) {
-            setZhCache((prev) =>
-              prev[mid] === undefined ? { ...prev, [mid]: '' } : prev
-            );
-          }
-        }
-      }, 95000);
       axios
         .post(
           `${API}/admin/translate`,
@@ -328,7 +321,6 @@ const AdminChat = ({
           setZhCache((prev) => ({ ...prev, [mid]: '' }));
         })
         .finally(() => {
-          clearTimeout(softTimer);
           translatingIdsRef.current.delete(mid);
         });
     });
@@ -638,8 +630,51 @@ const AdminChat = ({
 
   const handleRetryMessage = async (msg) => {
     if (!selectedSessionId || sending || uploading) return;
+    if (msg.type === 'image') {
+      const file = pendingFilesRef.current.get(msg.client_message_id);
+      if (!file) {
+        toast.error(ac.imageRetryHint);
+        return;
+      }
+      setUploading(true);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.client_message_id === msg.client_message_id ? { ...m, status: 'pending' } : m
+        )
+      );
+      try {
+        const form = new FormData();
+        form.append('file', file, file.name);
+        form.append('client_message_id', msg.client_message_id);
+        const res = await retryRequest(() =>
+          axios.post(`${API}/admin/chat/sessions/${selectedSessionId}/upload`, form, {
+            headers: { Authorization: `Bearer ${getToken()}` },
+            timeout: 60000,
+          })
+        );
+        const serverMsg = {
+          ...res.data.message,
+          client_message_id: res.data.message.client_message_id || msg.client_message_id,
+        };
+        if (msg.image_url?.startsWith('blob:')) URL.revokeObjectURL(msg.image_url);
+        pendingFilesRef.current.delete(msg.client_message_id);
+        setMessages((prev) => mergeMessages(prev, [serverMsg]));
+        if (serverMsg.created_at) lastSinceRef.current = serverMsg.created_at;
+        fetchSessions();
+      } catch (err) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.client_message_id === msg.client_message_id ? { ...m, status: 'failed' } : m
+          )
+        );
+        toast.error(getApiErrorMessage(err, ac.sendFailed, t));
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
     if (msg.type !== 'text' || !msg.content?.trim()) {
-      toast.error(ac.imageRetryHint);
+      toast.error(ac.sendFailed);
       return;
     }
     setSending(true);
@@ -671,6 +706,7 @@ const AdminChat = ({
     setUploading(true);
     const clientId = createClientMessageId();
     const localUrl = URL.createObjectURL(file);
+    pendingFilesRef.current.set(clientId, file);
     const optimistic = {
       client_message_id: clientId,
       session_id: selectedSessionId,
@@ -699,9 +735,11 @@ const AdminChat = ({
         ...res.data.message,
         client_message_id: res.data.message.client_message_id || clientId,
       };
+      pendingFilesRef.current.delete(clientId);
       setMessages((prev) => mergeMessages(prev, [serverMsg]));
       if (serverMsg.created_at) lastSinceRef.current = serverMsg.created_at;
       fetchSessions();
+      URL.revokeObjectURL(localUrl);
     } catch (err) {
       setMessages((prev) =>
         prev.map((m) =>
@@ -709,8 +747,8 @@ const AdminChat = ({
         )
       );
       toast.error(getApiErrorMessage(err, ac.sendFailed, t));
+      // Keep blob URL + file so failed preview remains retryable
     } finally {
-      URL.revokeObjectURL(localUrl);
       setUploading(false);
     }
   };
@@ -1014,15 +1052,18 @@ const AdminChat = ({
           // 外文在上、中文在下
           const foreign = msg.content || '';
           let chinese = null;
+          let translateFailed = false;
           if (msg.type !== 'image' && mid) {
             if (msg.content_original) chinese = msg.content_original;
             else if (!msg.message_id) chinese = ac.translatingHint;
-            else if (zhCache[msg.message_id] === '') chinese = ac.translationFailedHint;
-            else if (zhCache[msg.message_id]) chinese = zhCache[msg.message_id];
+            else if (zhCache[msg.message_id] === '') {
+              chinese = ac.translationFailedHint;
+              translateFailed = true;
+            } else if (zhCache[msg.message_id]) chinese = zhCache[msg.message_id];
             else chinese = ac.translatingHint;
-            // 与外文完全相同时不重复显示
             if (chinese && foreign && chinese.trim() === foreign.trim()) {
               chinese = null;
+              translateFailed = false;
             }
           }
           return (
@@ -1033,6 +1074,7 @@ const AdminChat = ({
               showAdminLayout
               foreignText={foreign}
               chineseText={chinese}
+              translateFailed={translateFailed}
               onRetry={msg.status === 'failed' ? () => handleRetryMessage(msg) : undefined}
               onDelete={handleDeleteMessage}
               onRetryTranslate={handleRetryTranslate}

@@ -33,7 +33,7 @@ const POLL_INTERVAL_OPEN = 3000;
 const PING_INTERVAL = 5000;
 const PING_INTERVAL_HIDDEN = 10000;
 const BG_SYNC_INTERVAL = 10000;
-const FULL_SYNC_EVERY = 10;
+const FULL_SYNC_EVERY = 3;
 const SEND_TIMEOUT_MS = 30000;
 
 const getOrCreateSessionId = () => {
@@ -75,6 +75,8 @@ const ChatWidget = () => {
   const lastAdminMsgKeyRef = useRef(null);
   const notificationsReadyRef = useRef(false);
   const uploadImageBusyRef = useRef(false);
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
 
   const adoptSessionId = useCallback((sid) => {
     const next = (sid || '').trim();
@@ -124,9 +126,15 @@ const ChatWidget = () => {
   const applyMessages = useCallback((incoming, isIncremental = false) => {
     setMessages((prev) => {
       const base = isIncremental ? prev : [];
-      const failedPending = getPendingMessages(sessionId.current).filter(
-        (m) => m.status === 'failed'
-      );
+      const failedPending = getPendingMessages(sessionId.current).filter((m) => {
+        if (m.status !== 'failed') return false;
+        // Image rows without an in-memory File can't be retried after reload — drop them.
+        if (m.type === 'image' && !pendingFilesRef.current.has(m.client_message_id)) {
+          removePendingMessage(sessionId.current, m.client_message_id);
+          return false;
+        }
+        return true;
+      });
       const merged = mergeMessages(mergeMessages(base, incoming), failedPending);
       if (merged.length > 0) {
         const last = merged[merged.length - 1];
@@ -192,65 +200,6 @@ const ChatWidget = () => {
     return res.data;
   }, [adoptSessionId]);
 
-  const syncFromServer = useCallback(async () => {
-    if (needsRegister || chatBlockedRef.current) return;
-    try {
-      const res = await axios.get(`${API}/chat/sync`, {
-        params: visitorChatParams(sessionId.current, visitorPhone),
-        headers: visitorChatHeaders(visitorPhone),
-        timeout: SEND_TIMEOUT_MS,
-      });
-      clearChatBlocked();
-      const serverMsgs = res.data.messages || [];
-      const serverUnread = res.data.unread_visitor || 0;
-
-      applyMessages(serverMsgs, false);
-
-      if (!isOpen) {
-        setUnread(serverUnread);
-        notifyNewAdminMessages(serverMsgs);
-      }
-    } catch (err) {
-      if (handleChatApiError(err)) return;
-      if (
-        (err?.response?.status === 404 ||
-          err?.response?.data?.detail === 'SESSION_NOT_FOUND' ||
-          err?.response?.data?.detail === 'SESSION_ACCESS_DENIED') &&
-        visitorName &&
-        visitorPhone
-      ) {
-        try {
-          await initSession(visitorName, visitorPhone);
-          const res = await axios.get(`${API}/chat/sync`, {
-            params: visitorChatParams(sessionId.current, visitorPhone),
-            headers: visitorChatHeaders(visitorPhone),
-            timeout: SEND_TIMEOUT_MS,
-          });
-          applyMessages(res.data.messages || [], false);
-        } catch (e) {
-          handleChatApiError(e);
-        }
-      }
-    }
-  }, [
-    needsRegister,
-    isOpen,
-    applyMessages,
-    visitorPhone,
-    visitorName,
-    handleChatApiError,
-    clearChatBlocked,
-    notifyNewAdminMessages,
-    initSession,
-  ]);
-
-  useEffect(() => {
-    if (needsRegister || notificationsReadyRef.current) return undefined;
-    notificationsReadyRef.current = true;
-    requestNotificationPermission();
-    return undefined;
-  }, [needsRegister]);
-
   const recoverSessionIfNeeded = useCallback(
     async (err) => {
       const detail = err?.response?.data?.detail;
@@ -275,6 +224,73 @@ const ChatWidget = () => {
     [visitorName, visitorPhone, initSession, clearChatBlocked, handleChatApiError]
   );
 
+  const syncFromServer = useCallback(async () => {
+    if (needsRegister || chatBlockedRef.current) return;
+    try {
+      const res = await axios.get(`${API}/chat/sync`, {
+        params: visitorChatParams(sessionId.current, visitorPhone),
+        headers: visitorChatHeaders(visitorPhone),
+        timeout: SEND_TIMEOUT_MS,
+      });
+      clearChatBlocked();
+      const serverMsgs = res.data.messages || [];
+      const serverUnread = res.data.unread_visitor || 0;
+
+      applyMessages(serverMsgs, false);
+
+      if (!isOpenRef.current) {
+        setUnread(serverUnread);
+        notifyNewAdminMessages(serverMsgs);
+      }
+    } catch (err) {
+      if (handleChatApiError(err)) return;
+      if (await recoverSessionIfNeeded(err)) {
+        try {
+          const res = await axios.get(`${API}/chat/sync`, {
+            params: visitorChatParams(sessionId.current, visitorPhone),
+            headers: visitorChatHeaders(visitorPhone),
+            timeout: SEND_TIMEOUT_MS,
+          });
+          applyMessages(res.data.messages || [], false);
+        } catch (e) {
+          handleChatApiError(e);
+        }
+      }
+    }
+  }, [
+    needsRegister,
+    applyMessages,
+    visitorPhone,
+    handleChatApiError,
+    clearChatBlocked,
+    notifyNewAdminMessages,
+    recoverSessionIfNeeded,
+  ]);
+
+  useEffect(() => {
+    if (needsRegister || notificationsReadyRef.current) return undefined;
+    notificationsReadyRef.current = true;
+    requestNotificationPermission();
+    return undefined;
+  }, [needsRegister]);
+
+  const postVisitorImage = useCallback(
+    async (file, clientMessageId, content = '') => {
+      const form = new FormData();
+      form.append('session_id', sessionId.current);
+      form.append('file', file, file.name);
+      form.append('content', content || '');
+      form.append('visitor_name', visitorName);
+      form.append('visitor_phone', visitorPhone);
+      form.append('client_message_id', clientMessageId);
+      return axios.post(`${API}/chat/upload`, form, {
+        headers: { 'Content-Type': 'multipart/form-data', ...visitorChatHeaders(visitorPhone) },
+        timeout: 120000,
+      });
+    },
+    [visitorName, visitorPhone]
+  );
+
   const retryPendingMessages = useCallback(async () => {
     const pending = getPendingMessages(sessionId.current);
     for (const msg of pending) {
@@ -283,18 +299,11 @@ const ChatWidget = () => {
         let res;
         if (msg.type === 'image') {
           const file = pendingFilesRef.current.get(msg.client_message_id);
-          if (!file) continue;
-          const form = new FormData();
-          form.append('session_id', sessionId.current);
-          form.append('file', file, file.name);
-          form.append('content', msg.content || '');
-          form.append('visitor_name', visitorName);
-          form.append('visitor_phone', visitorPhone);
-          form.append('client_message_id', msg.client_message_id);
-          res = await axios.post(`${API}/chat/upload`, form, {
-            headers: { 'Content-Type': 'multipart/form-data', ...visitorChatHeaders(visitorPhone) },
-            timeout: 120000,
-          });
+          if (!file) {
+            removePendingMessage(sessionId.current, msg.client_message_id);
+            continue;
+          }
+          res = await postVisitorImage(file, msg.client_message_id, msg.content || '');
         } else {
           res = await axios.post(
             `${API}/chat/messages`,
@@ -320,20 +329,33 @@ const ChatWidget = () => {
       } catch (err) {
         if (await recoverSessionIfNeeded(err)) {
           try {
-            if (msg.type === 'image') continue;
-            const res = await axios.post(
-              `${API}/chat/messages`,
-              {
-                session_id: sessionId.current,
-                content: msg.content,
-                visitor_name: visitorName,
-                visitor_phone: visitorPhone,
-                client_message_id: msg.client_message_id,
-              },
-              { headers: visitorChatHeaders(visitorPhone), timeout: SEND_TIMEOUT_MS }
-            );
+            let res;
+            if (msg.type === 'image') {
+              const file = pendingFilesRef.current.get(msg.client_message_id);
+              if (!file) {
+                removePendingMessage(sessionId.current, msg.client_message_id);
+                setMessages((prev) =>
+                  prev.filter((m) => m.client_message_id !== msg.client_message_id)
+                );
+                continue;
+              }
+              res = await postVisitorImage(file, msg.client_message_id, msg.content || '');
+            } else {
+              res = await axios.post(
+                `${API}/chat/messages`,
+                {
+                  session_id: sessionId.current,
+                  content: msg.content,
+                  visitor_name: visitorName,
+                  visitor_phone: visitorPhone,
+                  client_message_id: msg.client_message_id,
+                },
+                { headers: visitorChatHeaders(visitorPhone), timeout: SEND_TIMEOUT_MS }
+              );
+            }
             adoptSessionId(res.data?.session_id);
             removePendingMessage(sessionId.current, msg.client_message_id);
+            pendingFilesRef.current.delete(msg.client_message_id);
             setMessages((prev) =>
               mergeMessages(
                 prev.filter((m) => m.client_message_id !== msg.client_message_id),
@@ -364,6 +386,7 @@ const ChatWidget = () => {
     recoverSessionIfNeeded,
     handleChatApiError,
     markMessageFailed,
+    postVisitorImage,
   ]);
 
   useEffect(() => {
@@ -521,26 +544,42 @@ const ChatWidget = () => {
     if (!msg?.client_message_id || sending || uploading) return;
     if (msg.type === 'image') {
       const file = pendingFilesRef.current.get(msg.client_message_id);
-      if (!file) return;
+      if (!file) {
+        removePendingMessage(sessionId.current, msg.client_message_id);
+        setMessages((prev) =>
+          prev.filter((m) => m.client_message_id !== msg.client_message_id)
+        );
+        setPhoneError(t.chat.imageRetry || t.chat.imageUploadFailed);
+        return;
+      }
       setUploading(true);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.client_message_id === msg.client_message_id ? { ...m, status: 'pending' } : m
+        )
+      );
       try {
-        const form = new FormData();
-        form.append('session_id', sessionId.current);
-        form.append('file', file, file.name);
-        form.append('content', msg.content || '');
-        form.append('visitor_name', visitorName);
-        form.append('visitor_phone', visitorPhone);
-        form.append('client_message_id', msg.client_message_id);
-        const res = await axios.post(`${API}/chat/upload`, form, {
-          headers: { 'Content-Type': 'multipart/form-data', ...visitorChatHeaders(visitorPhone) },
-          timeout: 120000,
-        });
+        let res;
+        try {
+          res = await postVisitorImage(file, msg.client_message_id, msg.content || '');
+        } catch (err) {
+          if (await recoverSessionIfNeeded(err)) {
+            res = await postVisitorImage(file, msg.client_message_id, msg.content || '');
+          } else {
+            throw err;
+          }
+        }
+        adoptSessionId(res.data?.session_id);
         removePendingMessage(sessionId.current, msg.client_message_id);
         pendingFilesRef.current.delete(msg.client_message_id);
         setMessages((prev) =>
-          mergeMessages(prev.filter((m) => m.client_message_id !== msg.client_message_id), [res.data.message])
+          mergeMessages(prev.filter((m) => m.client_message_id !== msg.client_message_id), [
+            res.data.message,
+          ])
         );
       } catch (err) {
+        markMessageFailed(msg.client_message_id, msg);
+        handleChatApiError(err);
         setPhoneError(getApiErrorMessage(err, t.chat.imageUploadFailed, t));
       } finally {
         setUploading(false);
@@ -581,8 +620,8 @@ const ChatWidget = () => {
       localStorage.setItem(PHONE_KEY, phone);
       setVisitorName(name);
       setVisitorPhone(phone);
+      // Bootstrap effect (needsRegister → false) will sync + retry pending
       setNeedsRegister(false);
-      syncFromServer();
     } catch (err) {
       if (!handleChatApiError(err)) {
         setPhoneError(
@@ -690,17 +729,16 @@ const ChatWidget = () => {
     setMessages((prev) => mergeMessages(prev, [optimistic]));
 
     try {
-      const form = new FormData();
-      form.append('session_id', sessionId.current);
-      form.append('file', file, file.name);
-      form.append('visitor_name', visitorName);
-      form.append('visitor_phone', visitorPhone);
-      form.append('client_message_id', clientId);
-
-      const res = await axios.post(`${API}/chat/upload`, form, {
-        headers: { 'Content-Type': 'multipart/form-data', ...visitorChatHeaders(visitorPhone) },
-        timeout: 120000,
-      });
+      let res;
+      try {
+        res = await postVisitorImage(file, clientId);
+      } catch (err) {
+        if (await recoverSessionIfNeeded(err)) {
+          res = await postVisitorImage(file, clientId);
+        } else {
+          throw err;
+        }
+      }
       adoptSessionId(res.data?.session_id);
       removePendingMessage(sessionId.current, clientId);
       pendingFilesRef.current.delete(clientId);
@@ -710,6 +748,7 @@ const ChatWidget = () => {
           [res.data.message]
         )
       );
+      URL.revokeObjectURL(previewUrl);
     } catch (err) {
       savePendingMessage(sessionId.current, { ...optimistic, status: 'failed' });
       setMessages((prev) =>
@@ -717,9 +756,10 @@ const ChatWidget = () => {
           m.client_message_id === clientId ? { ...m, status: 'failed' } : m
         )
       );
+      handleChatApiError(err);
       setPhoneError(getApiErrorMessage(err, t.chat.imageUploadFailed, t));
+      // Keep blob URL for retry preview until message is confirmed or discarded
     } finally {
-      URL.revokeObjectURL(previewUrl);
       uploadImageBusyRef.current = false;
       setUploading(false);
       inputRef.current?.focus();
