@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 PROVIDER_GOOGLE = "google"
 PROVIDER_DEEPSEEK = "deepseek"
 
+SUPPORTED_TARGETS = frozenset({"zh", "he", "ar", "en"})
+
 DEEPSEEK_API_KEY = (os.environ.get("DEEPSEEK_API_KEY") or "").strip()
 DEEPSEEK_BASE_URL = (
     os.environ.get("DEEPSEEK_BASE_URL") or "https://api.deepseek.com"
@@ -27,7 +29,17 @@ _cache: dict[str, str] = {}
 _CACHE_MAX = 2000
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
-_RTL_RE = re.compile(r"[\u0590-\u05FF\u0600-\u06FF]")
+_HEBREW_RE = re.compile(r"[\u0590-\u05FF]")
+_ARABIC_RE = re.compile(r"[\u0600-\u06FF]")
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
+# Google Translate target codes
+_GOOGLE_LANG = {
+    "zh": "zh-CN",
+    "he": "he",
+    "ar": "ar",
+    "en": "en",
+}
 
 
 def is_cjk_text(text: str) -> bool:
@@ -37,10 +49,34 @@ def is_cjk_text(text: str) -> bool:
     return cjk >= max(1, len(text.strip()) // 4)
 
 
-def is_rtl_text(text: str) -> bool:
+def is_hebrew_text(text: str) -> bool:
     if not text:
         return False
-    return bool(_RTL_RE.search(text))
+    return bool(_HEBREW_RE.search(text))
+
+
+def is_arabic_text(text: str) -> bool:
+    if not text:
+        return False
+    return bool(_ARABIC_RE.search(text))
+
+
+def is_rtl_text(text: str) -> bool:
+    """True if text contains Hebrew or Arabic script."""
+    return is_hebrew_text(text) or is_arabic_text(text)
+
+
+def is_english_text(text: str) -> bool:
+    """Mostly Latin letters, little CJK / Hebrew / Arabic."""
+    if not text:
+        return False
+    s = text.strip()
+    latin = len(_LATIN_RE.findall(s))
+    if latin < max(1, len(s) // 4):
+        return False
+    if _CJK_RE.search(s) or _HEBREW_RE.search(s) or _ARABIC_RE.search(s):
+        return False
+    return True
 
 
 def normalize_provider(provider: Optional[str]) -> str:
@@ -59,6 +95,13 @@ def normalize_gender(gender: Optional[str]) -> str:
     if g in ("female", "f", "woman", "女", "女性"):
         return "female"
     return "male"
+
+
+def normalize_target(target: Optional[str]) -> str:
+    t = (target or "zh").strip().lower()
+    if t not in SUPPORTED_TARGETS:
+        raise ValueError("target must be zh, he, ar, or en")
+    return t
 
 
 def _cache_key(text: str, target: str, provider: str, gender: str = "male") -> str:
@@ -167,17 +210,19 @@ def _deepseek_translate(system: str, user_text: str) -> str:
     return out
 
 
+_ISRAEL_CHAT_STYLE = (
+    "Write like Israeli citizens chat online today (WhatsApp / Telegram / live chat): "
+    "natural, direct, concise, everyday register — not literary, not bureaucratic, "
+    "not textbook-formal. Keep local payment and crypto names as Israelis write them "
+    "(BIT, PayBox, USDT, ILS, בנק, etc.). Prefer short sentences people actually send."
+)
+
+
 def _build_translate_system(target: str, gender: str) -> str:
-    """DeepSeek system prompts; customer gender affects Hebrew gendered forms."""
+    """DeepSeek system prompts; customer gender affects gendered forms where needed."""
     g = normalize_gender(gender)
     customer_zh = "男性" if g == "male" else "女性"
     customer_en = "male" if g == "male" else "female"
-    customer_he = "masculine" if g == "male" else "feminine"
-    address_hint = (
-        "address the customer in masculine 2nd person (אתה, and matching verb/adjective forms)"
-        if g == "male"
-        else "address the customer in feminine 2nd person (את, and matching verb/adjective forms)"
-    )
 
     if target == "zh":
         return (
@@ -187,14 +232,65 @@ def _build_translate_system(target: str, gender: str) -> str:
             "保留数字、货币符号、专有名词与换行。"
             f"语境：以色列客户为{customer_zh}；客服人员为男性。"
             "如原文含性别相关称呼或语法，译文语气与之一致即可。"
+            "译文应符合中文客服在即时通讯里的自然说法，不要文言腔。"
         )
 
+    if target == "ar":
+        address_hint = (
+            "address the customer in masculine 2nd person "
+            "(أنت and matching masculine verb/adjective forms)"
+            if g == "male"
+            else "address the customer in feminine 2nd person "
+            "(أنتِ and matching feminine verb/adjective forms)"
+        )
+        return (
+            "You are a professional translator for Israeli customer support. "
+            "Translate the user message into natural Arabic as Israeli Arab citizens "
+            "and Arabic speakers in Israel use online (Levantine / Israeli everyday chat "
+            "register — clear and conversational, not heavy Classical MSA, not Gulf dialect). "
+            "Output ONLY the Arabic translation — no explanations, no quotes, no prefixes. "
+            "If the text is already Arabic, return it unchanged. "
+            "Keep numbers, currency symbols, proper nouns (BIT, PayBox, USDT), and line breaks. "
+            f"{_ISRAEL_CHAT_STYLE} "
+            f"The Israeli customer is {customer_en}. When the message addresses or refers "
+            f"to the customer, {address_hint}. Prefer correct gender agreement; "
+            "do not invent gender words that are not implied by the source. "
+            "The support agent (staff) is male; when the source is the agent's words, "
+            "use masculine forms for the agent's self-reference where Arabic requires gender."
+        )
+
+    if target == "en":
+        return (
+            "You are a professional translator for Israeli customer support. "
+            "Translate the user message into natural English as used by Israeli citizens "
+            "online and in live chat with support — clear, direct, concise international "
+            "English (not stiff formal British legalese, not slang-heavy). "
+            "Output ONLY the English translation — no explanations, no quotes, no prefixes. "
+            "If the text is already English, return it unchanged. "
+            "Keep numbers, currency symbols, proper nouns (BIT, PayBox, USDT, ILS), and line breaks. "
+            f"{_ISRAEL_CHAT_STYLE} "
+            f"The Israeli customer is {customer_en}; use matching pronouns (he/she, his/her) "
+            "only when the source clearly refers to the customer in third person. "
+            "Second-person you is gender-neutral. "
+            "The support agent (staff) is male when first-person gender is needed."
+        )
+
+    # Hebrew (default outbound target)
+    address_hint = (
+        "address the customer in masculine 2nd person (אתה, and matching verb/adjective forms)"
+        if g == "male"
+        else "address the customer in feminine 2nd person (את, and matching verb/adjective forms)"
+    )
+    customer_he = "masculine" if g == "male" else "feminine"
     return (
         "You are a professional translator for Israeli customer support. "
-        "Translate the user message into natural modern Hebrew (עברית). "
+        "Translate the user message into natural modern Israeli Hebrew (עברית ישראלית) "
+        "as people write in WhatsApp / Telegram / live chat in Israel — spoken register, "
+        "not literary or overly formal. "
         "Output ONLY the Hebrew translation — no explanations, no quotes, no prefixes. "
         "If the text is already Hebrew, return it unchanged. "
-        "Keep numbers, currency symbols, proper nouns, and line breaks. "
+        "Keep numbers, currency symbols, proper nouns (BIT, PayBox, USDT), and line breaks. "
+        f"{_ISRAEL_CHAT_STYLE} "
         f"The Israeli customer is {customer_en}. When the message addresses or refers "
         f"to the customer, {address_hint}. Prefer correct {customer_he} gendered "
         "grammar; do not invent gender words that are not implied by the source. "
@@ -203,11 +299,23 @@ def _build_translate_system(target: str, gender: str) -> str:
     )
 
 
+def _already_in_target(text: str, target: str) -> bool:
+    if target == "zh":
+        return is_cjk_text(text) and not is_rtl_text(text)
+    if target == "he":
+        return is_hebrew_text(text) and not is_arabic_text(text)
+    if target == "ar":
+        return is_arabic_text(text) and not is_hebrew_text(text)
+    if target == "en":
+        return is_english_text(text)
+    return False
+
+
 def _translate_via_provider(
     text: str, target: str, provider: str, gender: str = "male"
 ) -> tuple[str, str]:
     """Returns (translated_text, actual_provider_used)."""
-    lang = "zh-CN" if target == "zh" else "he"
+    lang = _GOOGLE_LANG[target]
     if provider == PROVIDER_GOOGLE:
         return _google_translate(text, lang), PROVIDER_GOOGLE
 
@@ -227,14 +335,12 @@ def translate_text(
     gender: Optional[str] = None,
 ) -> dict:
     """
-    Translate text to zh or he.
+    Translate text to zh / he / ar / en.
     Returns { text, provider, cached, gender }.
     provider is the engine that produced the text (may differ from request on fallback).
     """
     text = (text or "").strip()
-    target = (target or "").strip().lower()
-    if target not in ("zh", "he"):
-        raise ValueError("target must be zh or he")
+    target = normalize_target(target)
     use_gender = normalize_gender(gender)
     if not text:
         return {
@@ -246,14 +352,7 @@ def translate_text(
 
     use_provider = normalize_provider(provider)
 
-    if target == "zh" and is_cjk_text(text) and not is_rtl_text(text):
-        return {
-            "text": text,
-            "provider": use_provider,
-            "cached": True,
-            "gender": use_gender,
-        }
-    if target == "he" and is_rtl_text(text):
+    if _already_in_target(text, target):
         return {
             "text": text,
             "provider": use_provider,

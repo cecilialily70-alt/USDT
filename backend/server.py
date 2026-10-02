@@ -114,7 +114,36 @@ _country_cache: dict[str, tuple[str, float]] = {}
 CHAT_RETENTION_DAYS = 30
 CHAT_RETENTION_SECONDS = CHAT_RETENTION_DAYS * 24 * 60 * 60
 WHITELIST_RETENTION_DAYS = 7
-NEW_SESSION_WELCOME_HE = "היי, שירות המרות (ביט/פייבוקס/משיכה ללא כרטיס). איך אפשר לעזור?"
+NEW_SESSION_WELCOME_HE = (
+    "תנאי העסקה (אנא לקרוא בעיון):\n"
+    "\n"
+    "⚠️ הערות העברה: יש לרשום בהערות ההעברה אך ורק את המילים \"החזר חוב\". נא לא להוסיף אף מילה אחרת או תיאור נוסף.\n"
+    "\n"
+    "⚠️ אחריות השולח: באחריותך המלאה לוודא את נכונות פרטי ההעברה ב-100% לפני האישור. כל תוצאה או השלכה שתיגרם תהיה באחריותך הבלעדית.\n"
+    "\n"
+    "⚠️ סופיות העסקה: העסקה היא סופית. ברגע שההעברה בוצעה ויצאה לדרך, לא ניתן לבטלה או לשחזר אותה.\n"
+    "\n"
+    "⚠️ תקשורת ואזהרה משפטית: בכל בעיה או שאלה, ניתן לתקשר איתנו באופן מיידי. עם זאת, הגשת דיווח זדוני או שקרי תגרור אחריה אחריות פלילית ונקיטת הליכים משפטיים.\n"
+    "\n"
+    "⚠️ אישור התנאים: במידה והתנאים מקובלים עליך, אנא השב/י כאן במילה ״מסכים״ (או \"מסכימה\"), ואשלח לך את פרטי ההעברה."
+)
+NEW_SESSION_WELCOME_AR = (
+    "شروط المعاملة (يرجى قراءتها بعناية):\n"
+    "\n"
+    "⚠️ ملاحظات التحويل: يجب كتابة عبارة \"سداد دين\" فقط في ملاحظات التحويل. يُرجى عدم إضافة أي كلمات أو أوصاف أخرى.\n"
+    "\n"
+    "⚠️ مسؤولية المُرسِل: تقع على عاتقك مسؤولية التحقق من صحة تفاصيل التحويل بنسبة 100% قبل تأكيده. أي نتيجة أو تبعات تترتب على ذلك ستكون مسؤوليتك وحدك.\n"
+    "\n"
+    "⚠️ نهائية المعاملة: المعاملة نهائية. بمجرد إتمام التحويل وبدئه، لا يمكن إلغاؤه أو استعادته.\n"
+    "\n"
+    "⚠️ تنبيه قانوني: في حال وجود أي مشكلة أو استفسار، يُرجى التواصل معنا فورًا. مع ذلك، فإن تقديم بلاغ كاذب أو مُغرض يُعرّضك للمساءلة الجنائية والملاحقة القانونية.\n"
+    "\n"
+    "⚠️ تأكيد الشروط: إذا كانت الشروط مقبولة لديك، يُرجى الرد هنا بكلمة \"موافق\" (أو \"موافق\")، وسأرسل إليك تفاصيل التحويل."
+)
+WELCOME_BY_LANG = {
+    "he": NEW_SESSION_WELCOME_HE,
+    "ar": NEW_SESSION_WELCOME_AR,
+}
 WELCOME_MESSAGE_CLIENT_ID = "system:welcome"
 CLEANUP_INTERVAL_SECONDS = 10 * 60
 UNREAD_NOTIFY_SECONDS = 90
@@ -379,6 +408,7 @@ class ChatSessionCreate(BaseModel):
     session_id: str
     visitor_name: str
     visitor_phone: str
+    language: str = "he"
 
 class AdminChatReply(BaseModel):
     content: str = ""
@@ -396,9 +426,9 @@ class AdminSessionGender(BaseModel):
 
 class AdminTranslateRequest(BaseModel):
     text: str = ""
-    target: str = "zh"  # zh | he
+    target: str = "zh"  # zh | he | ar | en
     provider: str = ""  # google | deepseek (optional)
-    gender: str = "male"  # customer gender for Hebrew prompts
+    gender: str = "male"  # customer gender for he/ar gendered forms
 
 def normalize_ip(raw: str) -> str:
     candidate = (raw or "").strip()
@@ -1480,8 +1510,8 @@ async def maybe_notify_stale_unread():
             logger.warning("maybe_notify_stale_unread failed: %s", e)
 
 
-async def send_new_session_welcome(session_id: str):
-    """Auto-greet new visitors once per session (Hebrew welcome from admin side)."""
+async def send_new_session_welcome(session_id: str, language: str = "he"):
+    """Auto-greet new visitors once per session (terms welcome from admin side)."""
     ensure_mongo_context()
     existing = await chat_messages_collection.find_one(
         {"session_id": session_id, "client_message_id": WELCOME_MESSAGE_CLIENT_ID},
@@ -1489,11 +1519,13 @@ async def send_new_session_welcome(session_id: str):
     )
     if existing:
         return
+    lang = (language or "he").strip().lower()
+    content = WELCOME_BY_LANG.get(lang, NEW_SESSION_WELCOME_HE)
     await create_message_record(
         session_id=session_id,
         sender="admin",
         msg_type="text",
-        content=NEW_SESSION_WELCOME_HE,
+        content=content,
         client_message_id=WELCOME_MESSAGE_CLIENT_ID,
     )
 
@@ -1834,7 +1866,7 @@ async def create_or_get_chat_session(
             raise HTTPException(status_code=500, detail="SESSION_CREATE_FAILED")
 
         if is_brand_new_user:
-            await send_new_session_welcome(session_id)
+            await send_new_session_welcome(session_id, getattr(data, "language", "he") or "he")
             background_tasks.add_task(
                 notify_new_session, visitor_name, visitor_phone, session_id, ip
             )
@@ -2166,9 +2198,9 @@ async def admin_translate(
     data: AdminTranslateRequest,
     token_data: dict = Depends(verify_token),
 ):
-    """Translate text for admin ops (zh/he). Keys stay server-side."""
+    """Translate text for admin ops (zh/he/ar/en). Keys stay server-side."""
     try:
-        from translate import translate_text
+        from translate import translate_text, SUPPORTED_TARGETS
     except ImportError as e:
         logger.exception("translate module import failed: %s", e)
         raise HTTPException(status_code=503, detail="TRANSLATE_MODULE_MISSING") from e
@@ -2177,7 +2209,7 @@ async def admin_translate(
     if not text:
         raise HTTPException(status_code=400, detail="MESSAGE_EMPTY")
     target = (data.target or "zh").strip().lower()
-    if target not in ("zh", "he"):
+    if target not in SUPPORTED_TARGETS:
         raise HTTPException(status_code=400, detail="INVALID_TRANSLATE_TARGET")
     try:
         result = await asyncio.to_thread(
