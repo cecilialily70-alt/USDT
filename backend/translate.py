@@ -50,12 +50,14 @@ def is_cjk_text(text: str) -> bool:
 
 
 def is_hebrew_text(text: str) -> bool:
+    """True if text contains any Hebrew letter (for RTL / mixed detection)."""
     if not text:
         return False
     return bool(_HEBREW_RE.search(text))
 
 
 def is_arabic_text(text: str) -> bool:
+    """True if text contains any Arabic letter (for RTL / mixed detection)."""
     if not text:
         return False
     return bool(_ARABIC_RE.search(text))
@@ -64,6 +66,17 @@ def is_arabic_text(text: str) -> bool:
 def is_rtl_text(text: str) -> bool:
     """True if text contains Hebrew or Arabic script."""
     return is_hebrew_text(text) or is_arabic_text(text)
+
+
+def _script_majority(text: str, pattern: re.Pattern) -> bool:
+    """True when script chars are a meaningful share of the string (not a single letter)."""
+    if not text:
+        return False
+    s = text.strip()
+    if not s:
+        return False
+    n = len(pattern.findall(s))
+    return n >= max(1, len(s) // 4)
 
 
 def is_english_text(text: str) -> bool:
@@ -303,9 +316,18 @@ def _already_in_target(text: str, target: str) -> bool:
     if target == "zh":
         return is_cjk_text(text) and not is_rtl_text(text)
     if target == "he":
-        return is_hebrew_text(text) and not is_arabic_text(text)
+        # Hebrew must dominate; significant CJK or Arabic means still translate
+        return (
+            _script_majority(text, _HEBREW_RE)
+            and not is_cjk_text(text)
+            and not _script_majority(text, _ARABIC_RE)
+        )
     if target == "ar":
-        return is_arabic_text(text) and not is_hebrew_text(text)
+        return (
+            _script_majority(text, _ARABIC_RE)
+            and not is_cjk_text(text)
+            and not _script_majority(text, _HEBREW_RE)
+        )
     if target == "en":
         return is_english_text(text)
     return False

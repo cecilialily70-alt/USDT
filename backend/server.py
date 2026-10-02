@@ -138,7 +138,7 @@ NEW_SESSION_WELCOME_AR = (
     "\n"
     "⚠️ تنبيه قانوني: في حال وجود أي مشكلة أو استفسار، يُرجى التواصل معنا فورًا. مع ذلك، فإن تقديم بلاغ كاذب أو مُغرض يُعرّضك للمساءلة الجنائية والملاحقة القانونية.\n"
     "\n"
-    "⚠️ تأكيد الشروط: إذا كانت الشروط مقبولة لديك، يُرجى الرد هنا بكلمة \"موافق\" (أو \"موافق\")، وسأرسل إليك تفاصيل التحويل."
+    "⚠️ تأكيد الشروط: إذا كانت الشروط مقبولة لديك، يُرجى الرد هنا بكلمة \"موافق\" (أو \"موافقة\")، وسأرسل إليك تفاصيل التحويل."
 )
 WELCOME_BY_LANG = {
     "he": NEW_SESSION_WELCOME_HE,
@@ -1866,7 +1866,7 @@ async def create_or_get_chat_session(
             raise HTTPException(status_code=500, detail="SESSION_CREATE_FAILED")
 
         if is_brand_new_user:
-            await send_new_session_welcome(session_id, getattr(data, "language", "he") or "he")
+            await send_new_session_welcome(session_id, data.language or "he")
             background_tasks.add_task(
                 notify_new_session, visitor_name, visitor_phone, session_id, ip
             )
