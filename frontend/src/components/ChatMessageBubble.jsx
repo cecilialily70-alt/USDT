@@ -44,6 +44,7 @@ const ChatMessageBubble = ({
   chineseText,
   translateFailed = false,
   showAdminLayout = false,
+  showHistoryTranslate = true,
 }) => {
   const { t, locale } = useLanguage();
   const [imgLoaded, setImgLoaded] = useState(false);
@@ -97,7 +98,9 @@ const ChatMessageBubble = ({
   }
 
   const topText = showAdminLayout ? foreignText ?? msg.content : msg.content;
-  const bottomText = showAdminLayout ? chineseText : null;
+  // Off = original only; never show chineseText / content_original / cache
+  const bottomText =
+    showAdminLayout && showHistoryTranslate && chineseText ? chineseText : null;
   const timeLocale = showAdminLayout ? 'zh-CN' : locale;
 
   return (

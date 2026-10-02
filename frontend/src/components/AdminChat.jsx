@@ -38,6 +38,9 @@ const API = '/api';
 const SESSION_POLL_INTERVAL = 3000;
 const MESSAGE_POLL_INTERVAL = 2000;
 const PROVIDER_KEY = 'admin_translate_provider';
+const TARGET_LANG_KEY = 'admin_translate_target';
+const HISTORY_TRANSLATE_KEY = 'admin_history_translate';
+const OUTBOUND_TARGETS = ['he', 'ar', 'en'];
 
 const PresenceDot = ({ online, label }) => (
   <span className="inline-flex items-center gap-1 text-[10px]">
@@ -88,6 +91,15 @@ const AdminChat = ({
   const [provider, setProvider] = useState(
     () => localStorage.getItem(PROVIDER_KEY) || 'google'
   );
+  const [targetLang, setTargetLang] = useState(() => {
+    const saved = (localStorage.getItem(TARGET_LANG_KEY) || 'he').toLowerCase();
+    return OUTBOUND_TARGETS.includes(saved) ? saved : 'he';
+  });
+  const [historyTranslate, setHistoryTranslate] = useState(() => {
+    const saved = localStorage.getItem(HISTORY_TRANSLATE_KEY);
+    // Default ON; only explicit "0" / "false" turns it off
+    return saved !== '0' && saved !== 'false';
+  });
   const [uploading, setUploading] = useState(false);
   const [previewImage, setPreviewImage] = useState(null); // { file, previewUrl } | null
   const [zhCache, setZhCache] = useState({});
@@ -282,6 +294,7 @@ const AdminChat = ({
   // Auto-translate foreign messages → Chinese (visitor + admin without original)
   useEffect(() => {
     if (view !== 'chat') return;
+    if (!historyTranslate) return;
     const token = getToken();
     const gender = selectedSession?.visitor_gender === 'female' ? 'female' : 'male';
     const gen = translateGenRef.current;
@@ -324,7 +337,14 @@ const AdminChat = ({
           translatingIdsRef.current.delete(mid);
         });
     });
-  }, [messages, view, provider, selectedSession?.visitor_gender, selectedSessionId]);
+  }, [
+    messages,
+    view,
+    provider,
+    selectedSession?.visitor_gender,
+    selectedSessionId,
+    historyTranslate,
+  ]);
 
   const handleSelectSession = (session) => {
     // Single click: select only (stay on contacts)
@@ -503,6 +523,33 @@ const AdminChat = ({
     setTimeout(() => setTranslateStatus(''), 1600);
   };
 
+  const switchTargetLang = (lang) => {
+    const next = OUTBOUND_TARGETS.includes(lang) ? lang : 'he';
+    setTargetLang(next);
+    localStorage.setItem(TARGET_LANG_KEY, next);
+    setSendHe('');
+    setPendingOriginal('');
+    const label =
+      next === 'ar' ? ac.targetAr : next === 'en' ? ac.targetEn : ac.targetHe;
+    setTranslateStatus(`${ac.targetLangLabel}：${label}`);
+    setTimeout(() => setTranslateStatus(''), 1600);
+  };
+
+  const toggleHistoryTranslate = () => {
+    const next = !historyTranslate;
+    setHistoryTranslate(next);
+    localStorage.setItem(HISTORY_TRANSLATE_KEY, next ? '1' : '0');
+    setTranslateStatus(next ? ac.historyTranslateOn : ac.historyTranslateOff);
+    setTimeout(() => setTranslateStatus(''), 1600);
+  };
+
+  const outboundPlaceholder =
+    targetLang === 'ar'
+      ? ac.sendPlaceholderAr
+      : targetLang === 'en'
+        ? ac.sendPlaceholderEn
+        : ac.sendPlaceholderHe;
+
   const handleComposerEnter = () => {
     const hasSend = !!sendHe.trim();
     const hasDraft = !!draftZh.trim();
@@ -529,14 +576,15 @@ const AdminChat = ({
     setTranslateStatus(ac.translating);
     try {
       const gender = sessionGender(selectedSession);
+      const target = OUTBOUND_TARGETS.includes(targetLang) ? targetLang : 'he';
       const res = await axios.post(
         `${API}/admin/translate`,
-        { text, target: 'he', provider, gender },
+        { text, target, provider, gender },
         { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 90000 }
       );
-      const hebrew = (res.data?.text || text).trim();
+      const outbound = (res.data?.text || text).trim();
       setPendingOriginal(text);
-      setSendHe(hebrew);
+      setSendHe(outbound);
       setDraftZh('');
       const used = (res.data?.provider || provider || '').toLowerCase();
       if (used === 'google' && provider === 'deepseek') {
@@ -985,6 +1033,40 @@ const AdminChat = ({
               {ac.providerDeepseek}
             </Button>
           </div>
+          <div className="flex items-center gap-1.5" title={ac.targetLangLabel}>
+            {[
+              { code: 'he', label: ac.targetHe },
+              { code: 'ar', label: ac.targetAr },
+              { code: 'en', label: ac.targetEn },
+            ].map(({ code, label }) => (
+              <Button
+                key={code}
+                type="button"
+                size="sm"
+                className={`h-7 text-[11px] px-2.5 shrink-0 border ${
+                  targetLang === code
+                    ? 'bg-amber-600 hover:bg-amber-500 text-white border-amber-400/40'
+                    : 'bg-amber-950/30 text-amber-200/80 border-amber-800/40 hover:bg-amber-900/40'
+                }`}
+                onClick={() => switchTargetLang(code)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className={`h-7 text-[11px] px-2.5 shrink-0 border ${
+              historyTranslate
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/40'
+                : 'bg-zinc-800/60 text-zinc-400 border-zinc-600/50 hover:bg-zinc-700/60'
+            }`}
+            onClick={toggleHistoryTranslate}
+            title={ac.historyTranslateHint}
+          >
+            {historyTranslate ? `${ac.historyTranslate}·开` : `${ac.historyTranslate}·关`}
+          </Button>
           {(selectedSession.admin_note || '').trim() ? (
             <button
               type="button"
@@ -1045,15 +1127,19 @@ const AdminChat = ({
         </div>
       ) : null}
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3" ref={messagesContainerRef}>
+      <div
+        className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3"
+        ref={messagesContainerRef}
+        data-history-translate={historyTranslate ? 'on' : 'off'}
+      >
         {messages.map((msg) => {
           const mid = msg.message_id || msg.client_message_id;
           const isOwn = msg.sender === 'admin';
-          // 外文在上、中文在下
+          // 外文在上、中文在下（关闭历史翻译时只保留原文，含已译缓存也不显示）
           const foreign = msg.content || '';
           let chinese = null;
           let translateFailed = false;
-          if (msg.type !== 'image' && mid) {
+          if (historyTranslate && msg.type !== 'image' && mid) {
             if (msg.content_original) chinese = msg.content_original;
             else if (!msg.message_id) chinese = ac.translatingHint;
             else if (zhCache[msg.message_id] === '') {
@@ -1068,16 +1154,17 @@ const AdminChat = ({
           }
           return (
             <ChatMessageBubble
-              key={mid}
+              key={`${mid}-${historyTranslate ? 'ht' : 'raw'}`}
               msg={msg}
               isOwn={isOwn}
               showAdminLayout
+              showHistoryTranslate={historyTranslate}
               foreignText={foreign}
-              chineseText={chinese}
-              translateFailed={translateFailed}
+              chineseText={historyTranslate ? chinese : null}
+              translateFailed={historyTranslate ? translateFailed : false}
               onRetry={msg.status === 'failed' ? () => handleRetryMessage(msg) : undefined}
               onDelete={handleDeleteMessage}
-              onRetryTranslate={handleRetryTranslate}
+              onRetryTranslate={historyTranslate ? handleRetryTranslate : undefined}
             />
           );
         })}
@@ -1113,7 +1200,7 @@ const AdminChat = ({
                 handleComposerEnter();
               }
             }}
-            placeholder={ac.sendPlaceholder}
+            placeholder={outboundPlaceholder}
             disabled={sending}
             dir="auto"
             rows={2}

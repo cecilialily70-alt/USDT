@@ -49,7 +49,7 @@ const isRegistered = () =>
   localStorage.getItem(NAME_KEY) && localStorage.getItem(PHONE_KEY);
 
 const ChatWidget = () => {
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, currentLanguage } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -193,12 +193,13 @@ const ChatWidget = () => {
         session_id: sessionId.current,
         visitor_name: name,
         visitor_phone: phone,
+        language: currentLanguage || 'he',
       },
       { timeout: SEND_TIMEOUT_MS }
     );
     adoptSessionId(res.data?.session_id);
     return res.data;
-  }, [adoptSessionId]);
+  }, [adoptSessionId, currentLanguage]);
 
   const recoverSessionIfNeeded = useCallback(
     async (err) => {
