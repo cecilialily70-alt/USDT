@@ -299,6 +299,8 @@ const AdminChat = ({
     const gender = selectedSession?.visitor_gender === 'female' ? 'female' : 'male';
     const gen = translateGenRef.current;
     const sessionAtStart = selectedSessionId;
+    const originalsBatch = {};
+
     messages.forEach((msg) => {
       if (msg.type === 'image') return;
       // Wait for server id to avoid client_message_id → message_id cache orphaning
@@ -308,7 +310,7 @@ const AdminChat = ({
 
       const original = (msg.content_original || '').trim();
       if (original) {
-        setZhCache((prev) => ({ ...prev, [mid]: original }));
+        originalsBatch[mid] = original;
         return;
       }
 
@@ -337,6 +339,21 @@ const AdminChat = ({
           translatingIdsRef.current.delete(mid);
         });
     });
+
+    const batchKeys = Object.keys(originalsBatch);
+    if (batchKeys.length) {
+      setZhCache((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const mid of batchKeys) {
+          if (next[mid] === undefined) {
+            next[mid] = originalsBatch[mid];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
   }, [
     messages,
     view,
@@ -1154,7 +1171,7 @@ const AdminChat = ({
           }
           return (
             <ChatMessageBubble
-              key={`${mid}-${historyTranslate ? 'ht' : 'raw'}`}
+              key={mid}
               msg={msg}
               isOwn={isOwn}
               showAdminLayout
