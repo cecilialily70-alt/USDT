@@ -7,6 +7,7 @@ import certifi
 import asyncio
 import hashlib
 import hmac
+import threading
 import uuid
 import httpx
 import time
@@ -152,6 +153,8 @@ REPLY_LANGS = ("he", "ar", "en")
 TG_PUSH_MAX_SESSIONS = 10
 TG_PUSH_MAX_MESSAGES = 8
 TG_PUSH_MAX_CHARS = 3500
+# Fixed key for an external once-a-minute caller. Not an environment variable.
+UNREAD_NOTIFY_KEY = "q7Nw4Km9Xp2Lv8Rt6Yb3Hc1Jd5Fs0AeU"
 _last_cleanup_run_at = 0.0
 _last_unread_notify_check_at = 0.0
 _cleanup_lock = asyncio.Lock()
@@ -223,12 +226,13 @@ def signed_image_url(image_id: str, session_id: str) -> str:
     return f"/api/chat/images/{image_id}?session_id={session_id}&token={token}"
 
 def create_mongo_client():
-    """兼容 Vercel Serverless 的 MongoDB 连接"""
+    """兼容 Vercel Serverless 的 MongoDB 连接。每份程序只留很少的连接，空闲后放开。"""
     common = {
         "serverSelectionTimeoutMS": 20000,
         "connectTimeoutMS": 20000,
         "socketTimeoutMS": 20000,
-        "maxPoolSize": 10,
+        "maxPoolSize": 2,
+        "maxIdleTimeMS": 60000,
         "retryWrites": True,
     }
     if MONGO_URL.startswith("mongodb+srv://"):
@@ -249,6 +253,7 @@ chat_images_fs = AsyncIOMotorGridFSBucket(db, bucket_name="chat_images")
 
 _last_db_error = ""
 _mongo_loop_id = None
+_mongo_client_lock = threading.Lock()
 
 async def ping_database():
     global _last_db_error
@@ -263,10 +268,20 @@ async def ping_database():
 
 _indexes_ready = False
 
+def _close_mongo_client(client):
+    if client is None:
+        return
+    try:
+        client.close()
+    except Exception as e:
+        logger.warning("mongo client close failed: %s", e)
+
+
 def ensure_mongo_context():
     """
     Vercel Serverless 可能在不同事件循环中复用模块级对象。
     Motor 客户端绑定旧 loop 后会出现 RuntimeError（如 Task cb...）。
+    换新连接时关掉旧的，避免免费版连接数被占满。
     """
     global mongo_client, db, config_collection, whitelist_collection, blacklist_collection
     global chat_sessions_collection, chat_messages_collection, chat_images_fs
@@ -280,16 +295,24 @@ def ensure_mongo_context():
     if _mongo_loop_id == loop_id:
         return
 
-    mongo_client = create_mongo_client()
-    db = mongo_client.exchange_db
-    config_collection = db.config
-    whitelist_collection = db.whitelist
-    blacklist_collection = db.blacklist
-    chat_sessions_collection = db.chat_sessions
-    chat_messages_collection = db.chat_messages
-    chat_images_fs = AsyncIOMotorGridFSBucket(db, bucket_name="chat_images")
-    _mongo_loop_id = loop_id
-    _indexes_ready = False
+    old = None
+    with _mongo_client_lock:
+        if _mongo_loop_id == loop_id:
+            return
+        new_client = create_mongo_client()
+        old = mongo_client
+        mongo_client = new_client
+        db = mongo_client.exchange_db
+        config_collection = db.config
+        whitelist_collection = db.whitelist
+        blacklist_collection = db.blacklist
+        chat_sessions_collection = db.chat_sessions
+        chat_messages_collection = db.chat_messages
+        chat_images_fs = AsyncIOMotorGridFSBucket(db, bucket_name="chat_images")
+        _mongo_loop_id = loop_id
+        _indexes_ready = False
+    if old is not None and old is not mongo_client:
+        _close_mongo_client(old)
 
 async def ensure_indexes():
     global _indexes_ready
@@ -1666,18 +1689,30 @@ async def maybe_notify_stale_unread(force: bool = False):
             logger.warning("maybe_notify_stale_unread failed: %s", e)
 
 
-def _is_vercel_cron(request: Request) -> bool:
-    """Vercel calls this itself once a minute. No extra password to configure."""
-    if (request.headers.get("x-vercel-cron") or "").strip() == "1":
+def _secret_match(provided: str, expected: str) -> bool:
+    if not provided or len(provided) != len(expected):
+        return False
+    return hmac.compare_digest(provided, expected)
+
+
+def _cron_authorized(request: Request) -> bool:
+    """Accept the fixed key via Bearer, x-cron-secret, or ?key=."""
+    auth = (request.headers.get("authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        auth = auth[7:].strip()
+    if _secret_match(auth, UNREAD_NOTIFY_KEY):
         return True
-    ua = (request.headers.get("user-agent") or "").strip().lower()
-    return ua.startswith("vercel-cron")
+    header = (request.headers.get("x-cron-secret") or "").strip()
+    if _secret_match(header, UNREAD_NOTIFY_KEY):
+        return True
+    key = (request.query_params.get("key") or "").strip()
+    return _secret_match(key, UNREAD_NOTIFY_KEY)
 
 
 @app.api_route("/api/internal/unread-notify", methods=["GET", "POST"])
 async def cron_unread_notify(request: Request):
-    """Minute tick so a 90s unread reminder still goes out when nobody has the site open."""
-    if not _is_vercel_cron(request):
+    """External minute tick so a 90s unread reminder still goes out when nobody has the site open."""
+    if not _cron_authorized(request):
         raise HTTPException(status_code=401, detail="UNAUTHORIZED")
     await maybe_notify_stale_unread(force=True)
     return {"ok": True}
